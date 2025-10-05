@@ -2,12 +2,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "hash-table.h"
+
 #define MAX_STACK_SIZE 100
 
 // NOTE: value stack
 // NOTE: just an int array and we track top index
 typedef struct {
-  int data[MAX_STACK_SIZE];
+  int *data[MAX_STACK_SIZE]; // array of pointers now!
   int top;
 } Stack; 
 
@@ -24,7 +26,7 @@ int stack_is_full(Stack *s) {
   return s->top == MAX_STACK_SIZE - 1;
 }
 
-void stack_push(Stack *s, int value) {
+void stack_push(Stack *s, int *value) {
   if (stack_is_full(s)) {
     printf("Stack overflow!\n");
     exit(1);
@@ -32,7 +34,7 @@ void stack_push(Stack *s, int value) {
     s->data[++s->top] = value;
 }
 
-int stack_pop(Stack *s) {
+int *stack_pop(Stack *s) {
   if (stack_is_empty(s)) {
     printf("Stack underflow!\n");
     exit(1);
@@ -42,13 +44,13 @@ int stack_pop(Stack *s) {
 
 void stack_print(Stack *s) {
   if (stack_is_empty(s))
-    printf("[]");
+    printf("[]\n");
   else {
     int i;
-    printf("[%d", s->data[0]); 
+    printf("[%d", *s->data[0]); 
     for (i = 1; i <= s->top; i++)
-      printf(", %d", s->data[i]);
-    printf("]");
+      printf(", %d", *s->data[i]);
+    printf("]\n");
   }
 }
 
@@ -57,6 +59,8 @@ void stack_print(Stack *s) {
 typedef enum {
   OP_UNKNOWN = -1,
   OP_LOAD_CONST,
+  OP_STORE_NAME,
+  OP_LOAD_NAME,
   OP_ADD,
   OP_RETURN
 } OpCode;
@@ -71,13 +75,16 @@ OpCode get_opcode(const char *input) {
     i++;
   
   // TODO: use a hash-table
-  // printf("DEBUG: got input: %s, %d\n", input, i);
   if (equals_opcode(input, i, "LOAD_CONST"))
     return OP_LOAD_CONST;
   else if (equals_opcode(input, i, "ADD"))
     return OP_ADD;
   else if (equals_opcode(input, i, "RETURN"))
     return OP_RETURN;
+  else if (equals_opcode(input, i, "LOAD_NAME"))
+    return OP_LOAD_NAME;
+  else if (equals_opcode(input, i, "STORE_NAME"))
+    return OP_STORE_NAME;
   else
     return OP_UNKNOWN;
 }
@@ -107,12 +114,39 @@ int get_operand(const char *input) {
   return atoi(operand);
 }
 
+char *get_string_operand(const char *input) {
+
+  int c;
+  int i = 0;
+  while ((c = input[i]) != ',') {
+    if (c == '\0')
+      return NULL;
+    i++;
+  }
+
+  // now strip name from '---' bit
+  char *operand = malloc(10);
+  int j = 0;
+  i++; i++;
+  while ((c = input[i]) != '\'') {
+    operand[j] = c;
+    j++;
+    i++;
+  }
+
+  return operand;  
+}
+
 int main() {
 
   // initialise value stack
   Stack s;
   stack_init(&s);
   
+  // initialise variables hash-table
+  HashTable vars;
+  hashtable_init(&vars); 
+
   while (1) {
 
     // get bytecode commands from user
@@ -125,31 +159,57 @@ int main() {
     int operand;
 
     opcode = get_opcode(input); 
-    operand = get_operand(input); 
+
+    char *varname;
 
     // printf("Got opcode and operand! %d, %d\n", opcode, operand);
     switch (opcode) { 
       case OP_RETURN:
-        printf("return: %d\n", stack_pop(&s));
+        printf("return: %d\n", *stack_pop(&s));
         exit(0);
       case OP_LOAD_CONST:    
-        // printf("pushing const: %d\n", operand);
-        stack_push(&s, operand);
+        // malloc the object
+        int *object = malloc(sizeof(int));
+        *object = get_operand(input);
+        stack_push(&s, object);
+        break;
+      case OP_STORE_NAME:
+        // save stack[-1] to variable named operand
+        int *top = stack_pop(&s);
+        varname = get_string_operand(input);
+        hashtable_insert(&vars, varname, top);
+        break;
+      case OP_LOAD_NAME:
+        // get variable name
+        varname = get_string_operand(input); 
+        if (varname == NULL) {
+          printf("error: bad operand\n");
+          exit(1);
+        }
+        // lookup in vars table
+        int *value = hashtable_get(&vars, varname);
+        if (value == NULL) {
+          printf("error: no such variable\n");
+          exit(1);
+        }
+        stack_push(&s, value);
         break;
       case OP_ADD:
-        int b = stack_pop(&s);
-        int a = stack_pop(&s);
-        stack_push(&s, a + b); 
+        int *b = stack_pop(&s);
+        int *a = stack_pop(&s);
+        int *result = malloc(sizeof(int));
+        *result = *a + *b;
+        stack_push(&s, result); 
         break;
       case OP_UNKNOWN:
         printf("error: bad opcode\n");
         exit(1); 
     }
     
-    // TODO: take CLI argument to display stack or not
     printf("Stack: ");
     stack_print(&s);
-    printf("\n\n");
+    printf("Variables: ");
+    hashtable_print(&vars);
   }
 
   return 0;
