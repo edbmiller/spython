@@ -201,8 +201,7 @@ int main(int argc, char **argv) {
   HashTable vars;
   hashtable_init(&vars); 
 
-  if (strcmp(argv[1], "-i") == 0) {
-    printf("interactive mode...\n");
+  if (argv[1] == NULL) {
     while (1) {
       // get bytecode commands from user and handle
       printf(">> ");
