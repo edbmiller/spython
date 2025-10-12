@@ -88,34 +88,30 @@ int convert_to_int(const char *s, size_t len) {
 Node *parse_expression(const char *input, size_t len) {
   // take a slice like '1 + 2' of a line like 'x = 1 + 2'
   // and emit a AST node - recursive
-
-  // first: find first operator (+)
-  for (int i=0; i<len; i++) {
+  // first: find first operator
+  for (int i=len; i>=0; i--) {
     // TODO: do other operators
     if (input[i] == '+') {
-      // do LHS (this is a leaf i.e. const or variable name)
-      Node *left_node = malloc(sizeof(Node)); 
-      if ((*input - '0' >= 0) && (*input - '0' < 10)) {
+      // do LHS - note we start at input[i+2] and have length len-i-2
+      Node *left_node = parse_expression(input, i-1); 
+
+      // do RHS (this is a leaf i.e. const or variable name
+      Node *right_node = malloc(sizeof(Node)); 
+      if ((input[i+2] - '0' >= 0) && (input[i+2] - '0' < 10)) {
         // then first thing is a digit => this is an int literal
         Constant *c = malloc(sizeof(Constant));
-        c->value = convert_to_int(input, i-1);
-        left_node->type = CONSTANT;
-        left_node->data.constant = c;
+        c->value = convert_to_int(input+i+2, len-i-2);
+        right_node->type = CONSTANT;
+        right_node->data.constant = c;
       } else {
         // it's a variable name
         Name *n = malloc(sizeof(Name));
-        n->id = malloc(i-1);
-        memcpy(n->id, input, i-1);
-        left_node->type = NAME;
-        left_node->data.name = n;
+        n->id = malloc(len-i-2);
+        memcpy(n->id, input+i+2, len-i-2);
+        right_node->type = NAME;
+        right_node->data.name = n;
       }
 
-      // do RHS (this is an expression)
-      Constant *right = malloc(sizeof(Constant));
-      right->value = convert_to_int(input+i+2, len-i-2);  
-      Node *right_node = malloc(sizeof(Node));
-      right_node->type = CONSTANT;
-      right_node->data.constant = right;
   
       // make the output node - emit BinaryAdd
       BinaryAdd *binary_add = malloc(sizeof(BinaryAdd));
