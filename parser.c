@@ -1,81 +1,54 @@
 // parse epython code into an abstract syntax tree and emit bytecode
 // via a post-order traversal
 
-// TODO: implement expression parsing for the RHS of assignments
-// then we can actually do the full pipeline :O :O
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
-// NOTE: define our nodes
-typedef enum NodeType {
-  CONSTANT,
-  NAME,
-  BINARYADD,
-  ASSIGN,
-  RETURN
-} NodeType;
+#include "parser.h"
 
-typedef struct Constant {
-  int value; // TODO: pointer
-} Constant;
-
-typedef struct Name {
-  char *id;
-} Name;
-
-typedef struct Assign {
-  Name *target;
-  struct Node *value;
-} Assign;
-
-typedef struct BinaryAdd {
-  struct Node *left;
-  struct Node *right;
-} BinaryAdd;
-
-typedef struct Node {
-  NodeType type;
-  union {
-    Constant *constant;
-    Name *name;
-    BinaryAdd *binary_add;
-    Assign *assign;
-  } data;
-} Node;
-
-void walk(Node *node) {
-  // post-order traverse AST and emit bytecode
-  // printf("DEBUG: walk - switching on node type %d\n", node->type);
+void walk(Node *node, char **output, int *offset) {
+  // post-order traverse AST and emit bytecode to output
+  // buffer according to the current offset
+  // first: allocate string
   switch (node->type) {
     case CONSTANT:
       printf("LOAD_CONST,%d\n", node->data.constant->value);
+      output[*offset] = malloc(32); 
+      sprintf(output[*offset], "LOAD_CONST,%d", node->data.constant->value);
+      *offset += 1; 
       break; 
     case NAME:
       printf("LOAD_NAME,'%s'\n", node->data.name->id);
+      output[*offset] = malloc(32); 
+      sprintf(output[*offset], "LOAD_NAME,%d", node->data.name->id);
+      *offset += 1;
       break;
     case BINARYADD:
-      walk(node->data.binary_add->left);
-      walk(node->data.binary_add->right);
+      walk(node->data.binary_add->left, output, offset);
+      walk(node->data.binary_add->right, output, offset);
       printf("ADD\n");
+      output[*offset] = malloc(32); 
+      output[*offset] = "ADD";
+      *offset += 1;
       break;
     case ASSIGN:
       // walk expression node
-      walk(node->data.assign->value);
+      walk(node->data.assign->value, output, offset);
       printf("STORE_NAME,'%s'\n", node->data.assign->target->id);
+      output[*offset] = malloc(32); 
+      sprintf(output[*offset], "STORE_NAME,'%s'", node->data.assign->target->id);
+      *offset += 1;
       break;
     case RETURN:
       printf("RETURN\n");
+      output[*offset] = malloc(32); 
+      output[*offset] = "RETURN";
+      *offset += 1;
       break;
   }
 }
-
-// a module is an array of AST nodes
-typedef struct Module {
-  Node *nodes[20];
-} Module;
 
 void module_print(Module *module) {
   // debugging - print node types
@@ -93,11 +66,11 @@ void module_print(Module *module) {
   }
 } 
 
-void module_walk(Module *module) {
+void module_walk(Module *module, char **output, int *offset) {
   // just walk for each node
   for (int i = 0; module->nodes[i] != NULL; i++) {
     // printf("DEBUG: walking node %d\n", i);
-    walk(module->nodes[i]); 
+    walk(module->nodes[i], output, offset); 
   }
 }
 
@@ -204,29 +177,29 @@ Module *parse(const char *input) {
   return module;
 }
 
+/*
 int main() {
    
-  /*
   // constants
   Constant left;
   left.value = 1;
-  Node leftNode;
-  leftNode.type = CONSTANT;
-  leftNode.data.constant = &left;
+  Node left_node;
+  left_node.type = CONSTANT;
+  left_node.data.constant = &left;
 
   Constant right;
   right.value = 2;
-  Node rightNode;
-  rightNode.type = CONSTANT;
-  rightNode.data.constant = &right;
+  Node right_node;
+  right_node.type = CONSTANT;
+  right_node.data.constant = &right;
 
   // fill children of BinaryAdd node
   BinaryAdd add;
-  add.left = &leftNode;
-  add.right = &rightNode;
-  Node addNode;
-  addNode.type = BINARYADD;
-  addNode.data.binaryAdd = &add;
+  add.left = &left_node;
+  add.right = &right_node;
+  Node add_node;
+  add_node.type = BINARYADD;
+  add_node.data.binary_add = &add;
 
   // node for variable name
   Name name;
@@ -235,18 +208,21 @@ int main() {
   // fill assignment node   
   Assign assign;
   assign.target = &name;
-  assign.value = &addNode;
+  assign.value = &add_node;
 
   Node node;
   node.type = ASSIGN;
   node.data.assign = &assign;
-  */
 
   // traverse example AST
-  // walk(&node);
+  char **output = malloc(50 * sizeof(char *));
+  int *offset = malloc(sizeof(int));
+  *offset = 0;
+  // walk(&node, output, offset);
 
   Module *module = parse("x = 1 + 2\nreturn\n"); 
-  module_walk(module);
+  module_walk(module, output, offset);
    
   return 0;
 }
+*/

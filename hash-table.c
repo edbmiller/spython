@@ -15,10 +15,10 @@ int hash(const char *str) {
   return hash;
 }
 
-void node_init(Node *node, char *key, int *value) {
-  node->key = key;
-  node->value = value;
-  node->next = NULL;
+void entry_init(Entry *entry, char *key, int *value) {
+  entry->key = key;
+  entry->value = value;
+  entry->next = NULL;
 }
 
 void hashtable_init(HashTable *htable) {
@@ -27,8 +27,8 @@ void hashtable_init(HashTable *htable) {
   // initialise pre-head nodes
   int i;
   for (i = 0; i < htable->size; i++) {
-    Node *preHead = malloc(sizeof(Node));
-    node_init(preHead, NULL, NULL);
+    Entry *preHead = malloc(sizeof(Entry));
+    entry_init(preHead, NULL, NULL);
     htable->data[i] = preHead;
   }
 }
@@ -37,24 +37,23 @@ void hashtable_insert(HashTable *htable, const char *key, int *value) {
 
   // figure out bucket
   int index = hash(key) % htable->size;
-  // printf("DEBUG: insert - got index = %d\n", index);
   
   // find tail of that list
-  Node *tail = htable->data[index];  
+  Entry *tail = htable->data[index];  
   while (tail->next != NULL) 
     tail = tail->next;
 
   // malloc a new node and attach
-  Node *entry = malloc(sizeof(Node));
+  Entry *entry = malloc(sizeof(Entry));
   char *keyCopy = strdup(key);
-  node_init(entry, keyCopy, value);
+  entry_init(entry, keyCopy, value);
 
   tail->next = entry;
 }
 
 int* hashtable_get(HashTable *htable, const char *key) {
   int index = hash(key) % htable->size;
-  Node *current = htable->data[index]->next;
+  Entry *current = htable->data[index]->next;
   while (current != NULL) {
     if (strcmp(current->key, key) == 0)
       return current->value;
@@ -66,7 +65,7 @@ int* hashtable_get(HashTable *htable, const char *key) {
 void hashtable_print(HashTable *htable) {
   // print all keys and values
   int idx;
-  Node *current;
+  Entry *current;
 
   printf("{");
   for (idx = 0; idx < htable->size; idx++) {

@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "hash-table.h"
+#include "parser.h"
 
 #define MAX_STACK_SIZE 100
 
@@ -54,7 +55,6 @@ void stack_print(Stack *s) {
   }
 }
 
-// TODO: implement LOAD_NAME with hash-set
 // NOTE: define opcodes
 typedef enum {
   OP_UNKNOWN = -1,
@@ -137,7 +137,61 @@ char *get_string_operand(const char *input) {
   return operand;  
 }
 
-int main() {
+void handle_bytecode(Stack *s, HashTable *vars, const char *input) {
+  // take a bytecode instruction and mutate stack
+  OpCode opcode = get_opcode(input); 
+  char *varname;
+  switch (opcode) { 
+    case OP_RETURN:
+      printf("return: %d\n", *stack_pop(s));
+      exit(0);
+    case OP_LOAD_CONST:    
+      // malloc the object
+      int *object = malloc(sizeof(int));
+      *object = get_operand(input);
+      stack_push(s, object);
+      break;
+    case OP_STORE_NAME:
+      // save stack[-1] to variable named operand
+      int *top = stack_pop(s);
+      varname = get_string_operand(input);
+      hashtable_insert(vars, varname, top);
+      break;
+    case OP_LOAD_NAME:
+      // get variable name
+      varname = get_string_operand(input); 
+      if (varname == NULL) {
+        printf("error: bad operand\n");
+        exit(1);
+      }
+      // lookup in vars table
+      int *value = hashtable_get(vars, varname);
+      if (value == NULL) {
+        printf("error: no such variable\n");
+        exit(1);
+      }
+      stack_push(s, value);
+      break;
+    case OP_ADD:
+      int *b = stack_pop(s);
+      int *a = stack_pop(s);
+      int *result = malloc(sizeof(int));
+      *result = *a + *b;
+      stack_push(s, result); 
+      break;
+    case OP_UNKNOWN:
+      printf("error: bad opcode\n");
+      exit(1); 
+  }
+
+  printf("Stack: ");
+  stack_print(s);
+  printf("Variables: ");
+  hashtable_print(vars);
+  printf("\n");
+}
+
+int main(int argc, char **argv) {
 
   // initialise value stack
   Stack s;
@@ -147,69 +201,33 @@ int main() {
   HashTable vars;
   hashtable_init(&vars); 
 
-  while (1) {
-
-    // get bytecode commands from user
-    printf(">> ");
-    char input[20];
-    scanf("%19s", input);
-
-    // parse instruction
-    OpCode opcode;
-    int operand;
-
-    opcode = get_opcode(input); 
-
-    char *varname;
-
-    // printf("Got opcode and operand! %d, %d\n", opcode, operand);
-    switch (opcode) { 
-      case OP_RETURN:
-        printf("return: %d\n", *stack_pop(&s));
-        exit(0);
-      case OP_LOAD_CONST:    
-        // malloc the object
-        int *object = malloc(sizeof(int));
-        *object = get_operand(input);
-        stack_push(&s, object);
-        break;
-      case OP_STORE_NAME:
-        // save stack[-1] to variable named operand
-        int *top = stack_pop(&s);
-        varname = get_string_operand(input);
-        hashtable_insert(&vars, varname, top);
-        break;
-      case OP_LOAD_NAME:
-        // get variable name
-        varname = get_string_operand(input); 
-        if (varname == NULL) {
-          printf("error: bad operand\n");
-          exit(1);
-        }
-        // lookup in vars table
-        int *value = hashtable_get(&vars, varname);
-        if (value == NULL) {
-          printf("error: no such variable\n");
-          exit(1);
-        }
-        stack_push(&s, value);
-        break;
-      case OP_ADD:
-        int *b = stack_pop(&s);
-        int *a = stack_pop(&s);
-        int *result = malloc(sizeof(int));
-        *result = *a + *b;
-        stack_push(&s, result); 
-        break;
-      case OP_UNKNOWN:
-        printf("error: bad opcode\n");
-        exit(1); 
+  if (strcmp(argv[1], "-i") == 0) {
+    printf("interactive mode...\n");
+    while (1) {
+      // get bytecode commands from user and handle
+      printf(">> ");
+      char input[20];
+      scanf("%19s", input);
+      handle_bytecode(&s, &vars, input);
     }
-    
-    printf("Stack: ");
-    stack_print(&s);
-    printf("Variables: ");
-    hashtable_print(&vars);
+  } else {
+    // allocate string array of compiled bytecode instructions
+    char **instructions = malloc(100 * sizeof(char *));
+    int *offset = malloc(sizeof(int));
+    *offset = 0;
+    int i = 0;
+    // compile each line to a bytecode module and emit and handle instructions
+    // NOTE: assume each line is a single module for now (e.g. no functions)
+    FILE *file = fopen(argv[1], "r");
+    char input[60]; // a line of input
+    while (fgets(input, 60, file)) {
+      Module *module = malloc(sizeof(Module));
+      module = parse(input);
+      module_walk(module, instructions, offset);
+      // now handle each instruction
+      for (; i<*offset; i++)
+        handle_bytecode(&s, &vars, instructions[i]);
+    }
   }
 
   return 0;
