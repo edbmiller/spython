@@ -14,21 +14,21 @@ void walk(Node *node, char **output, int *offset) {
   // first: allocate string
   switch (node->type) {
     case CONSTANT:
-      printf("LOAD_CONST,%d\n", node->data.constant->value);
+      // printf("%d: LOAD_CONST,%d\n", *offset, node->data.constant->value);
       output[*offset] = malloc(32); 
       sprintf(output[*offset], "LOAD_CONST,%d", node->data.constant->value);
       *offset += 1; 
       break; 
     case NAME:
-      printf("LOAD_NAME,'%s'\n", node->data.name->id);
+      // printf("%d: LOAD_NAME,'%s'\n", *offset, node->data.name->id);
       output[*offset] = malloc(32); 
-      sprintf(output[*offset], "LOAD_NAME,%d", node->data.name->id);
+      sprintf(output[*offset], "LOAD_NAME,'%s'", node->data.name->id);
       *offset += 1;
       break;
     case BINARYADD:
       walk(node->data.binary_add->left, output, offset);
       walk(node->data.binary_add->right, output, offset);
-      printf("ADD\n");
+      // printf("%d: ADD\n", *offset);
       output[*offset] = malloc(32); 
       output[*offset] = "ADD";
       *offset += 1;
@@ -36,13 +36,13 @@ void walk(Node *node, char **output, int *offset) {
     case ASSIGN:
       // walk expression node
       walk(node->data.assign->value, output, offset);
-      printf("STORE_NAME,'%s'\n", node->data.assign->target->id);
+      // printf("%d: STORE_NAME,'%s'\n", *offset, node->data.assign->target->id);
       output[*offset] = malloc(32); 
       sprintf(output[*offset], "STORE_NAME,'%s'", node->data.assign->target->id);
       *offset += 1;
       break;
     case RETURN:
-      printf("RETURN\n");
+      // printf("RETURN\n");
       output[*offset] = malloc(32); 
       output[*offset] = "RETURN";
       *offset += 1;
@@ -93,14 +93,24 @@ Node *parse_expression(const char *input, size_t len) {
   for (int i=0; i<len; i++) {
     // TODO: do other operators
     if (input[i] == '+') {
-      // do LHS (assume it's a const with a space before +)
-      Constant *left = malloc(sizeof(Constant));
-      left->value = convert_to_int(input, i-1);
-      Node *left_node = malloc(sizeof(Node));
-      left_node->type = CONSTANT;
-      left_node->data.constant = left;
+      // do LHS (this is a leaf i.e. const or variable name)
+      Node *left_node = malloc(sizeof(Node)); 
+      if ((*input - '0' >= 0) && (*input - '0' < 10)) {
+        // then first thing is a digit => this is an int literal
+        Constant *c = malloc(sizeof(Constant));
+        c->value = convert_to_int(input, i-1);
+        left_node->type = CONSTANT;
+        left_node->data.constant = c;
+      } else {
+        // it's a variable name
+        Name *n = malloc(sizeof(Name));
+        n->id = malloc(i-1);
+        memcpy(n->id, input, i-1);
+        left_node->type = NAME;
+        left_node->data.name = n;
+      }
 
-      // do RHS
+      // do RHS (this is an expression)
       Constant *right = malloc(sizeof(Constant));
       right->value = convert_to_int(input+i+2, len-i-2);  
       Node *right_node = malloc(sizeof(Node));
@@ -118,6 +128,24 @@ Node *parse_expression(const char *input, size_t len) {
       return result_node;
     }
   }
+
+  // if we get here there are no operators => const or variable
+  Node *node = malloc(sizeof(Node)); 
+  if ((*input - '0' >= 0) && (*input - '0' < 10)) {
+    // then first thing is a digit => this is an int literal
+    Constant *c = malloc(sizeof(Constant));
+    c->value = convert_to_int(input, len);
+    node->type = CONSTANT;
+    node->data.constant = c;
+  } else {
+    // it's a variable name
+    Name *n = malloc(sizeof(Name));
+    n->id = malloc(len);
+    memcpy(n->id, input, len);
+    node->type = NAME;
+    node->data.name = n;
+  }
+  return node;
 }
 
 Module *parse(const char *input) {

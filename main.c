@@ -133,6 +133,7 @@ char *get_string_operand(const char *input) {
     j++;
     i++;
   }
+  operand[j] = '\0';
 
   return operand;  
 }
@@ -167,7 +168,7 @@ void handle_bytecode(Stack *s, HashTable *vars, const char *input) {
       // lookup in vars table
       int *value = hashtable_get(vars, varname);
       if (value == NULL) {
-        printf("error: no such variable\n");
+        printf("NameError: name '%s' is not defined\n", varname);
         exit(1);
       }
       stack_push(s, value);
@@ -224,8 +225,10 @@ int main(int argc, char **argv) {
       module = parse(input);
       module_walk(module, instructions, offset);
       // now handle each instruction
-      for (; i<*offset; i++)
+      for (; i<*offset; i++) {
+        printf("%d: %s\n", i, instructions[i]);
         handle_bytecode(&s, &vars, instructions[i]);
+      }
     }
   }
 
