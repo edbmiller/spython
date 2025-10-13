@@ -1,9 +1,29 @@
 #ifndef HASH_TABLE_H
 #define HASH_TABLE_H
 
+typedef enum {
+  PY_INT,
+  PY_FUNC
+} PyType;
+
+// NOTE: this is what goes in the hashtables :3
+typedef struct PyObject {
+  PyType type;
+} PyObject;
+
+typedef struct PyIntObject {
+  PyType type;
+  int value;
+} PyIntObject;
+
+typedef struct PyFuncObject {
+  PyType type;
+  int bytecode_offset;
+} PyFuncObject;
+
 typedef struct Entry {
   char *key; // NOTE: points to first char
-  int *value; // NOTE: eventually will be PyObject *object
+  PyObject *object; 
   struct Entry *next;
 } Entry;
 
@@ -14,8 +34,8 @@ typedef struct {
 } HashTable;
 
 void hashtable_init(HashTable *htable);
-void hashtable_insert(HashTable *htable, const char *key, int *value);
-int *hashtable_get(HashTable *htable, const char *key);
+void hashtable_insert(HashTable *htable, const char *key, PyObject *object);
+PyObject *hashtable_get(HashTable *htable, const char *key);
 void hashtable_print(HashTable *htable);
 
 #endif

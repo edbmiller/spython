@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "hash-table.h"
+#include "hash-table.h" 
 #include "parser.h"
 
 #define MAX_STACK_SIZE 100
@@ -62,6 +62,8 @@ typedef enum {
   OP_STORE_NAME,
   OP_LOAD_NAME,
   OP_ADD,
+  OP_MAKE_FUNCTION,
+  OP_CALL, // called with int argn, number of args to pop from stack
   OP_RETURN
 } OpCode;
 
@@ -143,18 +145,15 @@ void handle_bytecode(Stack *s, HashTable *vars, const char *input) {
   OpCode opcode = get_opcode(input); 
   char *varname;
   switch (opcode) { 
-    case OP_RETURN:
-      printf("return: %d\n", *stack_pop(s));
-      exit(0);
     case OP_LOAD_CONST:    
-      // malloc the object
+      // malloc the object - still just ints
       int *object = malloc(sizeof(int));
       *object = get_operand(input);
       stack_push(s, object);
       break;
     case OP_STORE_NAME:
       // save stack[-1] to variable named operand
-      int *top = stack_pop(s);
+      PyObject *top = stack_pop(s);
       varname = get_string_operand(input);
       hashtable_insert(vars, varname, top);
       break;
@@ -166,7 +165,7 @@ void handle_bytecode(Stack *s, HashTable *vars, const char *input) {
         exit(1);
       }
       // lookup in vars table
-      int *value = hashtable_get(vars, varname);
+      PyObject *value = hashtable_get(vars, varname);
       if (value == NULL) {
         printf("NameError: name '%s' is not defined\n", varname);
         exit(1);
@@ -174,22 +173,44 @@ void handle_bytecode(Stack *s, HashTable *vars, const char *input) {
       stack_push(s, value);
       break;
     case OP_ADD:
-      int *b = stack_pop(s);
-      int *a = stack_pop(s);
-      int *result = malloc(sizeof(int));
-      *result = *a + *b;
-      stack_push(s, result); 
+      PyObject *b = stack_pop(s);
+      PyObject *a = stack_pop(s);
+      if (a->type == PY_INT && b->type == PY_INT) {
+        PyIntObject *result = malloc(sizeof(PyIntObject));
+        result->value = ((PyIntObject *) a)->value + ((PyIntObject *) b)->value;
+        stack_push(s, (PyObject *) result); 
+        break;
+      } else {
+        printf("TypeError: can't add non-ints\n");    
+        exit(1); 
+      }
+    case OP_MAKE_FUNCTION:
+      int function_start_offset = get_operand(input);
+      PyFuncObject *f = malloc(sizeof(PyFuncObject));
+      f->type = PY_FUNC;
+      f->bytecode_offset = function_start_offset;
+      // push onto stack
+      stack_push(s, (PyObject *) f);
+    case OP_CALL_FUNCTION:
+      // TODO: push a new frame to callstack, remembering our
+      // current bytecode offset in the current frame
+      break;
+    case OP_RETURN:
+      // TODO: pop a frame from the callstack, return to the
+      // bytecode instruction referenced in the caller frame
+      // (and push the return'd value to the value stack of
+      // of the frame below)
       break;
     case OP_UNKNOWN:
       printf("error: bad opcode\n");
       exit(1); 
   }
 
-  printf("Stack: ");
-  stack_print(s);
-  printf("Variables: ");
-  hashtable_print(vars);
-  printf("\n");
+  // printf("Stack: ");
+  // stack_print(s);
+  // printf("Variables: ");
+  // hashtable_print(vars);
+  // printf("---------------\n");
 }
 
 int main(int argc, char **argv) {
@@ -200,7 +221,7 @@ int main(int argc, char **argv) {
   
   // initialise variables hash-table
   HashTable vars;
-  hashtable_init(&vars); 
+  hashtable_init(&vars);
 
   if (argv[1] == NULL) {
     while (1) {

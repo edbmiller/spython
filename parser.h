@@ -7,6 +7,7 @@ typedef enum NodeType {
   NAME,
   BINARYADD,
   ASSIGN,
+  FUNCTIONDEF,
   RETURN
 } NodeType;
 
@@ -18,15 +19,25 @@ typedef struct Name {
   char *id;
 } Name;
 
+typedef struct BinaryAdd {
+  struct Node *left;
+  struct Node *right;
+} BinaryAdd;
+
 typedef struct Assign {
   Name *target;
   struct Node *value;
 } Assign;
 
-typedef struct BinaryAdd {
-  struct Node *left;
-  struct Node *right;
-} BinaryAdd;
+typedef struct Return {
+  struct Node *value; 
+} Return;
+
+typedef struct FunctionDef {
+  char *name;
+  char *args[5]; // NOTE: limit to 5 arguments
+  struct Node *ret;
+} FunctionDef;
 
 typedef struct Node {
   NodeType type;
@@ -35,6 +46,8 @@ typedef struct Node {
     Name *name;
     BinaryAdd *binary_add;
     Assign *assign;
+    FunctionDef *function_def;
+    Return *ret;
   } data;
 } Node;
 

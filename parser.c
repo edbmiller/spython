@@ -14,13 +14,13 @@ void walk(Node *node, char **output, int *offset) {
   // first: allocate string
   switch (node->type) {
     case CONSTANT:
-      // printf("%d: LOAD_CONST,%d\n", *offset, node->data.constant->value);
+      printf("%d: LOAD_CONST,%d\n", *offset, node->data.constant->value);
       output[*offset] = malloc(32); 
       sprintf(output[*offset], "LOAD_CONST,%d", node->data.constant->value);
       *offset += 1; 
       break; 
     case NAME:
-      // printf("%d: LOAD_NAME,'%s'\n", *offset, node->data.name->id);
+      printf("%d: LOAD_NAME,'%s'\n", *offset, node->data.name->id);
       output[*offset] = malloc(32); 
       sprintf(output[*offset], "LOAD_NAME,'%s'", node->data.name->id);
       *offset += 1;
@@ -28,7 +28,7 @@ void walk(Node *node, char **output, int *offset) {
     case BINARYADD:
       walk(node->data.binary_add->left, output, offset);
       walk(node->data.binary_add->right, output, offset);
-      // printf("%d: ADD\n", *offset);
+      printf("%d: ADD\n", *offset);
       output[*offset] = malloc(32); 
       output[*offset] = "ADD";
       *offset += 1;
@@ -36,13 +36,31 @@ void walk(Node *node, char **output, int *offset) {
     case ASSIGN:
       // walk expression node
       walk(node->data.assign->value, output, offset);
-      // printf("%d: STORE_NAME,'%s'\n", *offset, node->data.assign->target->id);
+      printf("%d: STORE_NAME,'%s'\n", *offset, node->data.assign->target->id);
       output[*offset] = malloc(32); 
       sprintf(output[*offset], "STORE_NAME,'%s'", node->data.assign->target->id);
       *offset += 1;
       break;
+    case FUNCTIONDEF:
+      // TODO: walk the arguments and LOAD_NAMEs into locals
+      int function_start_bytecode_offset = *offset; // copy onto stack
+      // printf("walking function...\n");
+      walk(node->data.function_def->ret, output, offset);
+      // after walking code logic, we emit MAKE_FUNCTION with the bytecode
+      // offset to put the func object on the stack, then STORE_NAME to
+      // save it to a variable. woo!
+      output[*offset] = malloc(32);
+      sprintf(output[*offset], "MAKE_FUNCTION,%d", function_start_bytecode_offset);
+      printf("%d: MAKE_FUNCTION,%d\n", *offset, function_start_bytecode_offset);
+      *offset += 1; 
+      output[*offset] = malloc(32);
+      printf("%d: STORE_NAME,'%s'\n", *offset, node->data.function_def->name);
+      sprintf(output[*offset], "STORE_NAME,'%s'", node->data.function_def->name);
+      *offset += 1;
+      break;
     case RETURN:
-      // printf("RETURN\n");
+      walk(node->data.ret->value, output, offset);
+      printf("%d: RETURN\n", *offset);
       output[*offset] = malloc(32); 
       output[*offset] = "RETURN";
       *offset += 1;
@@ -244,8 +262,41 @@ int main() {
   *offset = 0;
   // walk(&node, output, offset);
 
-  Module *module = parse("x = 1 + 2\nreturn\n"); 
-  module_walk(module, output, offset);
+  // DEBUG: walk a trivial function which
+  // just returns an integer
+
+  // init and label constant node
+  Node *constant_node = malloc(sizeof(Node));
+  Constant *constant = malloc(sizeof(Constant)); 
+  constant->value = 3;
+  constant_node->data.constant = constant;
+  constant_node->type = CONSTANT;
+
+  // init and label return node and link to constant node
+  Node *ret_node = malloc(sizeof(Node));
+  Return *ret = malloc(sizeof(Return));
+  ret->value = constant_node;
+  ret_node->data.ret = ret;
+  ret_node->type = RETURN;
+
+  // init and label function_def node and link to return node
+  Node *function_def_node = malloc(sizeof(Node));
+  FunctionDef *function_def = malloc(sizeof(FunctionDef));
+  function_def->ret = ret_node;
+  char *function_name = malloc(sizeof(char *));
+  function_name = "foo";
+  function_def->name = function_name;
+  function_def_node->data.function_def = function_def;
+  function_def_node->type = FUNCTIONDEF; 
+
+  char **output = malloc(50 * sizeof(char *));
+  int *offset = malloc(sizeof(int));
+  *offset = 0;
+  
+  walk(function_def_node, output, offset);
+
+  // Module *module = parse("x = 1 + 2\nreturn\n"); 
+  // module_walk(module, output, offset);
    
   return 0;
 }

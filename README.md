@@ -39,9 +39,11 @@ The stack machine currently supports the following opcodes:
  - STORE_NAME
  - LOAD_NAME
  - ADD
- - RETURN
+ - MAKE_FUNCTION
 
-...but the AST parser only supports adding two constants, e.g. `x = 13 + 24`
+...and next we'll implement CALL_FUNCTION and RETURN with a callstack. We have a FunctionDef AST node with a name and instruction offset which emits MAKE_FUNCTION and STORE_NAME,\<name\> after its code logic bytecodes have been emitted. 
+
+Basic idea: we remember the instruction offset we've jumped from in the caller frame - when we return, we push the return'd value onto the value stack of the frame "below", and jump to the remembered instruction.
 
 ## To-do
 

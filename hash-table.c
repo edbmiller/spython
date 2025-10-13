@@ -15,9 +15,9 @@ int hash(const char *str) {
   return hash;
 }
 
-void entry_init(Entry *entry, char *key, int *value) {
+void entry_init(Entry *entry, char *key, PyObject *object) {
   entry->key = key;
-  entry->value = value;
+  entry->object = object;
   entry->next = NULL;
 }
 
@@ -33,7 +33,7 @@ void hashtable_init(HashTable *htable) {
   }
 }
 
-void hashtable_insert(HashTable *htable, const char *key, int *value) {
+void hashtable_insert(HashTable *htable, const char *key, PyObject *object) {
 
   // figure out bucket
   int index = hash(key) % htable->size;
@@ -46,17 +46,17 @@ void hashtable_insert(HashTable *htable, const char *key, int *value) {
   // malloc a new node and attach
   Entry *entry = malloc(sizeof(Entry));
   char *keyCopy = strdup(key);
-  entry_init(entry, keyCopy, value);
+  entry_init(entry, keyCopy, object);
 
   tail->next = entry;
 }
 
-int* hashtable_get(HashTable *htable, const char *key) {
+PyObject *hashtable_get(HashTable *htable, const char *key) {
   int index = hash(key) % htable->size;
   Entry *current = htable->data[index]->next;
   while (current != NULL) {
     if (strcmp(current->key, key) == 0)
-      return current->value;
+      return current->object;
     current = current->next; 
   }
   return NULL;
@@ -66,13 +66,12 @@ void hashtable_print(HashTable *htable) {
   // print all keys and values
   int idx;
   Entry *current;
-
   printf("{");
   for (idx = 0; idx < htable->size; idx++) {
     // iterate over bucket printing nodes we find
     current = htable->data[idx]->next;
     while (current != NULL) {
-      printf("'%s':'%d',", current->key, *current->value);
+      printf("'%s':type='%d',", current->key, current->object->type);
       current = current->next;
     }
   }
@@ -87,24 +86,36 @@ int main() {
   hashtable_init(&htable);
   
   // malloc some ints and insert them
-  int *p = (int *) malloc(sizeof(int));
-  *p = 12;
-  int *q = (int *) malloc(sizeof(int));
-  *q = 20;
-  int *r = (int *) malloc(sizeof(int));
-  *r = 33;
+  PyIntObject *p = malloc(sizeof(PyIntObject));
+  p->type = PY_INT;
+  p->value = 12;
 
-  hashtable_insert(&htable, "cake", p);
-  hashtable_insert(&htable, "poo", q);
-  hashtable_insert(&htable, "aaaa", r);
+  PyIntObject *q = malloc(sizeof(PyIntObject));
+  q->type = PY_INT;
+  q->value = 14;
+
+  PyFuncObject *f = malloc(sizeof(PyFuncObject));
+  f->type = PY_FUNC;
+  f->bytecode_offset = 10;
+
+  hashtable_insert(&htable, "cake", (PyObject *) p);
+  hashtable_insert(&htable, "poo", (PyObject *) q);
+  hashtable_insert(&htable, "aaaa", (PyObject *) f);
 
   printf("table: \n");
   hashtable_print(&htable);
 
-  int *value = hashtable_get(&htable, "poo");
-  if (value != NULL)
-    printf("did lookup! %d\n", *value);
-  else
+  PyObject *obj = hashtable_get(&htable, "aaaa");
+  if (obj != NULL) {
+    switch (obj->type) {
+      case PY_INT:
+        printf("got int: %d\n", ((PyIntObject *) obj)->value);
+        break;
+      case PY_FUNC:
+        printf("got func with offset: %d\n", ((PyFuncObject *) obj)->bytecode_offset); 
+        break;
+    }
+  } else
     printf("lookup failed :(\n");
 
   return 0;
