@@ -43,19 +43,20 @@ void walk(Node *node, char **output, int *offset) {
       break;
     case FUNCTIONDEF:
       // TODO: walk the arguments and LOAD_NAMEs into locals
-      int function_start_bytecode_offset = *offset; // copy onto stack
-      // printf("walking function...\n");
-      walk(node->data.function_def->ret, output, offset);
-      // after walking code logic, we emit MAKE_FUNCTION with the bytecode
-      // offset to put the func object on the stack, then STORE_NAME to
-      // save it to a variable. woo!
+      // NOTE: this is the offset we're putting the MAKE_FUNCTION
+      // opcode at - have to patch this after we've walked the
+      // body so we know where the function ends
       output[*offset] = malloc(32);
-      sprintf(output[*offset], "MAKE_FUNCTION,%d", function_start_bytecode_offset);
-      printf("%d: MAKE_FUNCTION,%d\n", *offset, function_start_bytecode_offset);
-      *offset += 1; 
+      int make_function_bytecode_offset = *offset;
+      *offset += 1;
+      module_walk(node->data.function_def->body, output, offset);        
+      // patch MAKE_FUNCTION with reference to jump point
+      // stack VM interprets this as "put offset+1 on stack and JUMP to arg"
+      sprintf(output[make_function_bytecode_offset], "MAKE_FUNCTION,'%d'", *offset);
+      printf("%d: MAKE_FUNCTION,'%d'\n", make_function_bytecode_offset, *offset);
       output[*offset] = malloc(32);
-      printf("%d: STORE_NAME,'%s'\n", *offset, node->data.function_def->name);
       sprintf(output[*offset], "STORE_NAME,'%s'", node->data.function_def->name);
+      printf("%d: STORE_NAME,'%s'\n", *offset, node->data.function_def->name);
       *offset += 1;
       break;
     case RETURN:
@@ -87,7 +88,6 @@ void module_print(Module *module) {
 void module_walk(Module *module, char **output, int *offset) {
   // just walk for each node
   for (int i = 0; module->nodes[i] != NULL; i++) {
-    // printf("DEBUG: walking node %d\n", i);
     walk(module->nodes[i], output, offset); 
   }
 }
@@ -129,7 +129,6 @@ Node *parse_expression(const char *input, size_t len) {
         right_node->type = NAME;
         right_node->data.name = n;
       }
-
   
       // make the output node - emit BinaryAdd
       BinaryAdd *binary_add = malloc(sizeof(BinaryAdd));
@@ -162,28 +161,58 @@ Node *parse_expression(const char *input, size_t len) {
   return node;
 }
 
-Module *parse(const char *input) {
-   
+/*
+Module *parsea(const char *input, int input_offset) {
+  // NOTE: we're parsing a chunk input[input_offset:len] - 
+  // we track our progress in it with `int chunk_offset`
   Module *module = malloc(sizeof(Module));
-  int idx = 0; // index into module's node array
-  const char *p = input;
-  const char *lineStart = input;
+  int idx = 0; // index into module node array
+  const char *lineStart = input + input_offset;
+  int chunk_offset = 0;
   int lineNumber = 1;
-  
+  const char *p;
+  p = lineStart;
+
   // NOTE: assume all lines are \n-terminated :3
-  while (*p) {
+  while (*p != '\0') {
+    printf("considering char %c at offset %d\n", *p, chunk_offset);
     if (*p == '\n') {
+      // ...then measure the line's length and process it
       size_t len = p - lineStart;
-  
       // process line ------------------------
-      // printf("Line %d: %.*s\n", lineNumber, (int)len, lineStart);
-      
+      printf("Line %d: %.*s\n", lineNumber, (int)len, lineStart);      
+      lineNumber++;
+      lineStart = p + 1;
+      chunk_offset++;
+      continue;
+
       if (len == 6 && strncmp(lineStart, "return", 6) == 0) {
-        // emit RETURN node
+        // TODO: emit RETURN(None)
         Node *node = malloc(sizeof(Node));
         node->type = RETURN; 
         module->nodes[idx] = node;
         idx++;
+        break; // and return module/body to function node
+      } else if (len >= 8 && strncmp(lineStart, "return ", 7) == 0) {
+        // TODO: have to malloc a module with a single RETURN node
+        // jaysus!!!! 
+        Node *node = malloc(sizeof(Node));
+        node->type = RETURN; 
+        node->data.ret->value = parse_expression(lineStart+8, len-8);
+        module->nodes[idx] = node;
+        idx++;
+        break; // and return module/body to function node
+      } else if (len >= 5 && strncmp(lineStart, "def ", 4) == 0) {
+        // copy function name
+        char *function_name = malloc(10);
+        for (int i=4; i < len; i++) {
+          if (lineStart[i] == '(')
+            break;
+          function_name[i-4] = lineStart[i];  
+        }
+        printf("DEBUG: got function! %s\n", function_name);
+        // TODO: want to do something like this...?
+        // Module *function_body = parse(input, (int) input - p);
       } else {
         for (size_t i=0; i+2<len; i++) {
           // 'a = 1 + 2'
@@ -210,18 +239,133 @@ Module *parse(const char *input) {
       }
 
       // end of processing -------------------
-      lineNumber++;
-      lineStart = p + 1;
+      // lineNumber++;
+      // lineStart = chunk_offset + 1;
     }
+    // p++;
+    chunk_offset++;
     p++;
   }
 
   return module;
 }
+*/
 
-/*
+Module *parse(const char *input, int depth, int *travelled) {
+  // parse the slice input[*offset:<end>] - we assume
+  // all lines we see are indented by 4 * depth
+  Module *module = malloc(sizeof(Module));
+  int node_idx = 0; // idx in module node array
+  int line_start_offset = depth*4; // beginning of the line being scanned + parsed
+  int i = 0; // char index in the input
+  const char *line_start; // assign when we see the whole line
+
+  while (input[i] != '\0') {
+    if (input[i] == '\n') {
+      int len = i - line_start_offset; // our "line" ends BEFORE the \n
+      line_start = input + line_start_offset;
+      printf("Parsing line: %.*s\n", len, line_start);
+
+      // ------ BEGIN main character crunching bit
+      if (len == 6 && strncmp(line_start, "return", 6) == 0) {
+        // RETURN NULL
+        Return *ret = malloc(sizeof(Return)); // NOTE: `value` is null ptr
+        Node *ret_node = malloc(sizeof(Node));
+        ret_node->type = RETURN; 
+        ret_node->data.ret = ret;
+        module->nodes[node_idx] = ret_node;
+        node_idx++;
+        break; // we are in a function if we see a return => module is finished now
+      } else if (len >= 8 && strncmp(line_start, "return ", 7) == 0) {
+        // RETURN
+        Return *ret = malloc(sizeof(Return));
+        ret->value = parse_expression(line_start+7, len-7);
+        Node *ret_node = malloc(sizeof(Node));
+        ret_node->type = RETURN;
+        ret_node->data.ret = ret;
+        module->nodes[node_idx] = ret_node;
+        node_idx++;
+        break; // same as above
+      } else if (len >= 3 && strncmp(line_start, "def ", 4) == 0) {
+
+        // FUNCTIONDEF
+        // find and copy the function name
+        char *f_name = malloc(10); // NOTE: max function name is 10
+        for (int k=4; k<len; k++) {
+          if (line_start[k] == '(') 
+            break;
+          f_name[k-4] = line_start[k];
+        } 
+
+        // now parse its body into a module
+        // ...have to find start of next line first! 
+        const char *next_line_start = line_start;
+        int d = 0;
+        while (*next_line_start != '\n')
+          next_line_start++;
+          d++;
+        next_line_start++;
+        d++;
+
+        // malloc an int which is incremented by body parse
+        // so we know where the function ends to continue from
+        int *sub_travelled = malloc(sizeof(int));
+        *sub_travelled = 0;
+        Module *f_body = parse(next_line_start, depth + 1, sub_travelled);
+
+        // done! just create the node
+        FunctionDef *function_def = malloc(sizeof(FunctionDef));
+        function_def->name = f_name;
+        function_def->body = f_body;
+        Node *f_def_node = malloc(sizeof(Node));
+        f_def_node->type = FUNCTIONDEF;
+        f_def_node->data.function_def = function_def;
+
+        // and insert in upper module
+        module->nodes[node_idx] = f_def_node;
+        node_idx++; 
+        
+        // bump i and travelled by distance sub_travelled on 
+        // body parse
+        i += (d + *sub_travelled - 1);
+        // printf("sub-parse done - now we have left to parse: %s", input + i + 1);
+      } else {
+        // ASSIGN
+        for (int j=0; j+2<len; j++) {
+          // look for assignment operator ' = ' 
+          if (line_start[j] == ' ' && line_start[j+1] == '=' && line_start[j+2] == ' ') {
+            // parse LHS
+            Name *name = malloc(sizeof(Name));
+            name->id = malloc(j+1);
+            memcpy(name->id, line_start, j);
+            name->id[j] = '\0';
+            
+            // parse expression on RHS and put in assignment object
+            Assign *assign = malloc(sizeof(Assign));
+            assign->target = name;
+            assign->value = parse_expression(line_start+j+3, len-j-3);
+
+            // make the wrapper node and finish
+            Node *assign_node = malloc(sizeof(Node)); 
+            assign_node->type = ASSIGN;
+            assign_node->data.assign = assign;
+            module->nodes[node_idx] = assign_node;
+            node_idx++; 
+          }
+        }
+      }
+      // new line starts on i + 1
+      line_start_offset = i + 1 + depth*4;
+    }
+    i++;
+    (*travelled)++;
+  }
+  return module;
+}
+
 int main() {
-   
+  
+  /*  
   // constants
   Constant left;
   left.value = 1;
@@ -261,43 +405,24 @@ int main() {
   int *offset = malloc(sizeof(int));
   *offset = 0;
   // walk(&node, output, offset);
-
-  // DEBUG: walk a trivial function which
-  // just returns an integer
-
-  // init and label constant node
-  Node *constant_node = malloc(sizeof(Node));
-  Constant *constant = malloc(sizeof(Constant)); 
-  constant->value = 3;
-  constant_node->data.constant = constant;
-  constant_node->type = CONSTANT;
-
-  // init and label return node and link to constant node
-  Node *ret_node = malloc(sizeof(Node));
-  Return *ret = malloc(sizeof(Return));
-  ret->value = constant_node;
-  ret_node->data.ret = ret;
-  ret_node->type = RETURN;
-
-  // init and label function_def node and link to return node
-  Node *function_def_node = malloc(sizeof(Node));
-  FunctionDef *function_def = malloc(sizeof(FunctionDef));
-  function_def->ret = ret_node;
-  char *function_name = malloc(sizeof(char *));
-  function_name = "foo";
-  function_def->name = function_name;
-  function_def_node->data.function_def = function_def;
-  function_def_node->type = FUNCTIONDEF; 
+  */
 
   char **output = malloc(50 * sizeof(char *));
   int *offset = malloc(sizeof(int));
   *offset = 0;
-  
-  walk(function_def_node, output, offset);
 
-  // Module *module = parse("x = 1 + 2\nreturn\n"); 
+  int *travel = malloc(sizeof(int));
+  *travel = 0; // don't need this, just for the call
+  Module *m = parse("def foo():\n    x = 1 + 2\n    return x\ny = foo()\n", 0, travel);
+  module_walk(m, output, offset);
+  /*
+  int i = 0;
+  while (m->nodes[0]->data.function_def->body->nodes[i] != NULL) {
+    printf("function body node %d: type=%d\n", i, m->nodes[0]->data.function_def->body->nodes[i]->type);
+    i++;
+  }
+  */
   // module_walk(module, output, offset);
    
   return 0;
 }
-*/

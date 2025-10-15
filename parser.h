@@ -36,7 +36,7 @@ typedef struct Return {
 typedef struct FunctionDef {
   char *name;
   char *args[5]; // NOTE: limit to 5 arguments
-  struct Node *ret;
+  struct Module *body;
 } FunctionDef;
 
 typedef struct Node {
@@ -57,6 +57,6 @@ typedef struct Module {
 
 void module_print(Module *m);
 void module_walk(Module *m, char **output, int *offset);
-Module *parse(const char *input); // main entry point
+Module *parse(const char *input, int indentation_depth, int *distance_travelled); // main entry point
 
 #endif
