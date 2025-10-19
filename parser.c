@@ -8,65 +8,108 @@
 
 #include "parser.h"
 
-void walk(Node *node, char **output, int *offset) {
+void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx) {
   // post-order traverse AST and emit bytecode to output
   // buffer according to the current offset
   // first: allocate string
   switch (node->type) {
     case CONSTANT:
-      output[*offset] = malloc(32); 
-      sprintf(output[*offset], "LOAD_CONST,%d", node->data.constant->value);
-      *offset += 1; 
+      PyIntObject *constant = malloc(sizeof(PyIntObject));
+      constant->type = PY_INT;
+      constant->value = node->data.constant->value;
+      consts[*c_idx] = (PyObject *) constant;
+      bytecode[*b_idx] = malloc(32); 
+      sprintf(bytecode[*b_idx], "LOAD_CONST,%d", *c_idx);
+      *b_idx += 1;
+      *c_idx += 1;
       break; 
     case NAME:
-      output[*offset] = malloc(32); 
-      sprintf(output[*offset], "LOAD_NAME,'%s'", node->data.name->id);
-      *offset += 1;
+      bytecode[*b_idx] = malloc(32); 
+      sprintf(bytecode[*b_idx], "LOAD_NAME,'%s'", node->data.name->id);
+      *b_idx += 1;
       break;
     case BINARYADD:
-      walk(node->data.binary_add->left, output, offset);
-      walk(node->data.binary_add->right, output, offset);
-      output[*offset] = "ADD";
-      *offset += 1;
+      walk(node->data.binary_add->left, bytecode, b_idx, consts, c_idx);
+      walk(node->data.binary_add->right, bytecode, b_idx, consts, c_idx);
+      bytecode[*b_idx] = "ADD";
+      *b_idx += 1;
       break;
     case ASSIGN:
-      walk(node->data.assign->value, output, offset);
-      output[*offset] = malloc(32); 
-      sprintf(output[*offset], "STORE_NAME,'%s'", node->data.assign->target->id);
-      *offset += 1;
+      walk(node->data.assign->value, bytecode, b_idx, consts, c_idx);
+      bytecode[*b_idx] = malloc(32); 
+      sprintf(bytecode[*b_idx], "STORE_NAME,'%s'", node->data.assign->target->id);
+      *b_idx += 1;
       break;
     case FUNCTIONDEF:
-      // TODO: walk the arguments and LOAD_NAMEs into locals
-      output[*offset] = malloc(32);
-      int make_function_bytecode_offset = *offset;
-      *offset += 1;
-      module_walk(node->data.function_def->body, output, offset);
-      // now offset points at next free bytecode slot after function body
-      // stack VM interprets this as "put offset+1 on stack and JUMP to arg"
-      sprintf(output[make_function_bytecode_offset], "MAKE_FUNCTION,%d", *offset);
-      output[*offset] = malloc(32);
-      sprintf(output[*offset], "STORE_NAME,'%s'", node->data.function_def->name);
-      *offset += 1;
+      // 1. build PyCodeObject
+      PyCodeObject *code = module_walk(node->data.function_def->body);
+      code->argnames = node->data.function_def->args;
+
+      // 2. save it to consts and emit a LOAD_CONST
+      consts[*c_idx] = (PyObject *) code;
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "LOAD_CONST,%d", *c_idx);
+      *c_idx += 1;
+      *b_idx += 1;
+
+      // 3. emit MAKE_FUNCTION and STORE_NAME
+      bytecode[*b_idx] = "MAKE_FUNCTION";
+      *b_idx += 1;
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "STORE_NAME,'%s'", node->data.function_def->name);
+      *b_idx += 1;
       break;
     case RETURN:
-      walk(node->data.ret->value, output, offset);
-      output[*offset] = "RETURN";
-      *offset += 1;
+      walk(node->data.ret->value, bytecode, b_idx, consts, c_idx);
+      bytecode[*b_idx] = "RETURN";
+      *b_idx += 1;
       break;
     case CALLFUNCTION:
-      output[*offset] = malloc(32);
-      sprintf(output[*offset], "LOAD_NAME,'%s'", node->data.call_function->func->id);
-      output[++(*offset)] = "CALL_FUNCTION";
-      *offset += 1;
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "LOAD_NAME,'%s'", node->data.call_function->func->id); 
+      *b_idx += 1;
+      // for each argument, emit a LOAD_ opcode
+      int i = 0;
+      while (node->data.call_function->args[i]) {
+        // load the value in this node - either name or const
+        switch (node->data.call_function->args[i]->type) {
+          case CONSTANT:
+            PyIntObject *constant = malloc(sizeof(PyIntObject));
+            constant->type = PY_INT;
+            constant->value = node->data.call_function->args[i]->data.constant->value;
+            consts[*c_idx] = (PyObject *) constant;
+            bytecode[*b_idx] = malloc(32); 
+            sprintf(bytecode[*b_idx], "LOAD_CONST,%d", *c_idx);
+            *b_idx += 1;
+            *c_idx += 1;
+            break;
+          case NAME:
+            bytecode[*b_idx] = malloc(32);
+            sprintf(bytecode[*b_idx], "LOAD_NAME,'%s'", node->data.call_function->args[i]->data.name->id);
+            *b_idx += 1;
+            break;
+        }
+        i++;
+      }
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "CALL_FUNCTION,%d", i);
+      *b_idx += 1;
       break;
   }
 }
 
-void module_walk(Module *module, char **output, int *offset) {
-  // just walk for each node
-  for (int i = 0; module->nodes[i] != NULL; i++) {
-    walk(module->nodes[i], output, offset); 
+PyCodeObject *module_walk(Module *module) {
+  PyCodeObject *result = malloc(sizeof(PyCodeObject));
+  result->type = PY_CODE;
+  result->bytecode = malloc(100 * sizeof(char *));
+  result->consts = malloc(10 * sizeof(PyObject *));
+  result->argnames = malloc(5 * sizeof(char *));
+  int *bytecode_offset = malloc(sizeof(int));
+  int *consts_offset = malloc(sizeof(int));
+  for (int i=0; module->nodes[i] != NULL; i++) {
+    walk(module->nodes[i], result->bytecode, bytecode_offset, result->consts, consts_offset); 
   }
+  return result;
 }
 
 int convert_to_int(const char *s, size_t len) {
@@ -137,6 +180,34 @@ Node *parse_expression(const char *input, size_t len) {
         func_name->id = malloc(i);
         memcpy(func_name->id, input, i);
         call->func = func_name;
+
+        // parse args
+        Node **args = malloc(5 * sizeof(Node *));
+        int arg_count = 0;
+        int arg_start_idx;
+        i++;
+        if (input[i] != ')') {
+          // we have some
+          arg_start_idx = i;
+          while (i<len) {
+            if (input[i] == ',' || input[i] == ')') {
+              // arg expression is finished => create node
+              args[arg_count] = parse_expression(input+arg_start_idx, i-arg_start_idx);
+              // reset + continue to next
+              if (input[i] == ')')
+                break;
+              else {
+                i += 2;
+                arg_start_idx = i;
+                arg_count++;
+              }
+            }
+            i++;
+          }
+        }
+        
+        // attach and finish
+        call->args = args;
         node->type = CALLFUNCTION; 
         node->data.call_function = call;
         return node;
@@ -160,16 +231,15 @@ Module *parse(const char *input, int depth, int *travelled) {
   int node_idx = 0; // idx in module node array
   int line_start_offset = depth*4; // beginning of the line being scanned + parsed
   int i = 0; // char index in the input
-  const char *line_start; // assign when we see the whole line
+  const char *line; // assign when we see the whole line
 
   while (input[i] != '\0') {
     if (input[i] == '\n') {
       int len = i - line_start_offset; // our "line" ends BEFORE the \n
-      line_start = input + line_start_offset;
-      // printf("Parsing line: %.*s\n", len, line_start);
+      line = input + line_start_offset;
 
       // ------ BEGIN main character crunching bit
-      if (len == 6 && strncmp(line_start, "return", 6) == 0) {
+      if (len == 6 && strncmp(line, "return", 6) == 0) {
         // RETURN NULL
         Return *ret = malloc(sizeof(Return)); // NOTE: `value` is null ptr
         Node *ret_node = malloc(sizeof(Node));
@@ -178,46 +248,86 @@ Module *parse(const char *input, int depth, int *travelled) {
         module->nodes[node_idx] = ret_node;
         node_idx++;
         break; // we are in a function if we see a return => module is finished now
-      } else if (len >= 8 && strncmp(line_start, "return ", 7) == 0) {
+      } else if (len >= 8 && strncmp(line, "return ", 7) == 0) {
         // RETURN
         Return *ret = malloc(sizeof(Return));
-        ret->value = parse_expression(line_start+7, len-7);
+        ret->value = parse_expression(line+7, len-7);
         Node *ret_node = malloc(sizeof(Node));
         ret_node->type = RETURN;
         ret_node->data.ret = ret;
         module->nodes[node_idx] = ret_node;
         node_idx++;
         break; // same as above
-      } else if (len >= 3 && strncmp(line_start, "def ", 4) == 0) {
+      } else if (len >= 3 && strncmp(line, "def ", 4) == 0) {
 
         // FUNCTIONDEF
         // find and copy the function name
         char *f_name = malloc(10); // NOTE: max function name is 10
-        for (int k=4; k<len; k++) {
-          if (line_start[k] == '(') 
+        int k;
+        for (k=4; k<len; k++) {
+          if (line[k] == '(') {
+            f_name[k-4] = '\0';
             break;
-          f_name[k-4] = line_start[k];
+          }
+          f_name[k-4] = line[k];
         } 
+
+        // now parse arguments (all positional)
+        // e.g. foo(a, b, c)
+        k++;
+        int f_arg_count = 0;
+        char **f_args = malloc(5 * sizeof(char*));
+        if (line[k] != ')') {
+          int arg_idx = 0;
+          f_args[0] = malloc(5);
+          while (k < len) {
+            if (line[k] == ')')
+              break;
+            if (line[k] == ',') {
+              f_args[f_arg_count][arg_idx] = '\0';
+              // reset for new arg
+              f_arg_count++; 
+              arg_idx = 0;
+              f_args[f_arg_count] = malloc(5);
+              k += 2;
+            } else {
+              // part of arg name 
+              f_args[f_arg_count][arg_idx] = line[k]; 
+              arg_idx++;
+              k += 1; 
+            }
+          }
+        }
+        
+        /* // DEBUGGING
+        int i = 0;
+        while (f_args[i] != NULL) {
+          printf("%d: %s\n", i, f_args[i]);
+          i++;
+        }
+        exit(0);
+        */
 
         // now parse its body into a module
         // ...have to find start of next line first! 
-        const char *next_line_start = line_start;
+        const char *next_line = line;
         int d = 0;
-        while (*next_line_start != '\n')
-          next_line_start++;
+        while (*next_line != '\n')
+          next_line++;
           d++;
-        next_line_start++;
+        next_line++;
         d++;
 
         // malloc an int which is incremented by body parse
         // so we know where the function ends to continue from
         int *sub_travelled = malloc(sizeof(int));
         *sub_travelled = 0;
-        Module *f_body = parse(next_line_start, depth + 1, sub_travelled);
+        Module *f_body = parse(next_line, depth + 1, sub_travelled);
 
         // done! just create the node
         FunctionDef *function_def = malloc(sizeof(FunctionDef));
         function_def->name = f_name;
+        function_def->args = f_args;
         function_def->body = f_body;
         Node *f_def_node = malloc(sizeof(Node));
         f_def_node->type = FUNCTIONDEF;
@@ -235,17 +345,17 @@ Module *parse(const char *input, int depth, int *travelled) {
         // ASSIGN
         for (int j=0; j+2<len; j++) {
           // look for assignment operator ' = ' 
-          if (line_start[j] == ' ' && line_start[j+1] == '=' && line_start[j+2] == ' ') {
+          if (line[j] == ' ' && line[j+1] == '=' && line[j+2] == ' ') {
             // parse LHS
             Name *name = malloc(sizeof(Name));
             name->id = malloc(j+1);
-            memcpy(name->id, line_start, j);
+            memcpy(name->id, line, j);
             name->id[j] = '\0';
             
             // parse expression on RHS and put in assignment object
             Assign *assign = malloc(sizeof(Assign));
             assign->target = name;
-            assign->value = parse_expression(line_start+j+3, len-j-3);
+            assign->value = parse_expression(line+j+3, len-j-3);
 
             // make the wrapper node and finish
             Node *assign_node = malloc(sizeof(Node)); 
@@ -268,18 +378,14 @@ Module *parse(const char *input, int depth, int *travelled) {
 /*
 int main() {
 
-  char **output = malloc(50 * sizeof(char *));
-  int *offset = malloc(sizeof(int));
-  *offset = 0;
-
   int *travel = malloc(sizeof(int));
   *travel = 0; // don't need this, just for the call
-  Module *m = parse("def foo():\n    x = 1 + 2\n    return x\ny = foo()\n", 0, travel);
-  module_walk(m, output, offset);
+  Module *m = parse("def foo(a, b, c):\n    return a + b + c\nx = foo(1, 2, 3)\n", 0, travel);
+  PyCodeObject *c = module_walk(m);
+  int i = 0;
+  for (; c->bytecode[i] != NULL; i++)
+    printf("%s\n", c->bytecode[i]);
    
-  for (int i=0; output[i] != NULL; i++)
-    printf("%d: %s\n", i, output[i]);
-
   return 0;
 }
 */

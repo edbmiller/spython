@@ -5,7 +5,7 @@
 #include "hash-table.h" 
 #include "parser.h"
 
-#define MAX_STACK_SIZE 100
+#define MAX_STACK_SIZE 100 
 #define MAX_RECURSION_DEPTH 1000
 
 // NOTE: value stack (each frame has one)
@@ -57,16 +57,20 @@ void stack_print(Stack *s) {
 */
 
 typedef struct PyFrameObject {
-  int bytecode_offset;
-  struct PyFrameObject *f_back; // previous frame
+  struct PyCodeObject *code; // bytecode being executed
+  int bytecode_offset; // program counter
+  struct PyFrameObject *prev; // previous frame
+  HashTable *locals;
   Stack *value_stack;
 } PyFrameObject;
 
-void py_frame_object_init(PyFrameObject *frame, int bytecode_offset) {
-  frame->bytecode_offset = bytecode_offset;
-  frame->f_back = NULL;
+void py_frame_object_init(PyFrameObject *frame) {
+  frame->bytecode_offset = 0;
+  frame->locals = malloc(sizeof(HashTable));
+  frame->prev = NULL;
   frame->value_stack = malloc(sizeof(Stack));
   stack_init(frame->value_stack);
+  hashtable_init(frame->locals);
 }
 
 typedef struct PyState {
@@ -169,10 +173,10 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
   char *varname;
   switch (opcode) { 
     case OP_LOAD_CONST:
-      // create object
-      PyIntObject *constant = malloc(sizeof(PyIntObject));
-      constant->value = get_operand(input);
-      stack_push(state->current_frame->value_stack, (PyObject *) constant);
+      // get obj from pre-compiled consts array
+      int idx = get_operand(input); 
+      PyObject *constant = state->current_frame->code->consts[idx];
+      stack_push(state->current_frame->value_stack, constant);
       state->current_frame->bytecode_offset += 1; // move us forward one instruction
       break;
     case OP_STORE_NAME:
@@ -189,13 +193,19 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
         printf("error: bad operand\n");
         exit(1);
       }
-      // lookup in vars table
-      PyObject *object = hashtable_get(vars, varname);
-      if (object == NULL) {
-        printf("NameError: name '%s' is not defined\n", varname);
-        exit(1);
+      // lookup in locals then vars
+      PyObject *localobject = hashtable_get(state->current_frame->locals, varname);
+      if (localobject != NULL) {
+        stack_push(state->current_frame->value_stack, localobject);
+      } else {
+        PyObject *globalobject = hashtable_get(vars, varname); 
+        if (globalobject != NULL) {
+          stack_push(state->current_frame->value_stack, globalobject);
+        } else {
+          printf("NameError: name '%s' is not defined\n", varname);
+          exit(1);
+        }
       }
-      stack_push(state->current_frame->value_stack, object);
       state->current_frame->bytecode_offset += 1;
       break;
     case OP_ADD:
@@ -212,14 +222,13 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
         exit(1); 
       }
     case OP_MAKE_FUNCTION:
-      int jump_offset = get_operand(input);
-      // ^ first line after function body finishes
+      // make func obj
       PyFuncObject *new_func = malloc(sizeof(PyFuncObject));
       new_func->type = PY_FUNC;
-      new_func->bytecode_offset = state->current_frame->bytecode_offset + 1;
-      // push onto stack
+      new_func->code = stack_pop(state->current_frame->value_stack); 
+      // push to stack - next opcode will be STORE_NAME...
       stack_push(state->current_frame->value_stack, (PyObject *) new_func);
-      state->current_frame->bytecode_offset = jump_offset;
+      state->current_frame->bytecode_offset += 1;
       break;
     case OP_CALL_FUNCTION:
       // push a new frame to callstack, remembering our
@@ -229,10 +238,24 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
         printf("RecursionError: maximum recursion depth exceeded\n");
         exit(1);
       }
+
+      int arg_count = get_operand(input);
+      // pop #arg_count args
+      PyObject **args = malloc(5 * sizeof(PyObject *));
+      for (int i=arg_count-1; i>=0; i--) {
+        args[i] = malloc(sizeof(PyObject *));
+        args[i] = stack_pop(state->current_frame->value_stack);
+      }
+      // pop callable
       PyFuncObject *func = (PyFuncObject *) stack_pop(state->current_frame->value_stack); 
+      // init new frame and populate locals
       PyFrameObject *new_frame = malloc(sizeof(PyFrameObject));
-      py_frame_object_init(new_frame, func->bytecode_offset);
-      new_frame->f_back = state->current_frame;
+      py_frame_object_init(new_frame);
+      for (int j=0; j<arg_count; j++) {
+        hashtable_insert(new_frame->locals, func->code->argnames[j], args[j]);
+      }
+      new_frame->prev = state->current_frame;
+      new_frame->code = func->code;
       // increment pc on the current frame so we pop back to the next instruction
       state->current_frame->bytecode_offset += 1;
       state->current_frame = new_frame;
@@ -245,8 +268,8 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
       // of the frame below)
       PyObject *return_value = stack_pop(state->current_frame->value_stack);
       PyFrameObject *old_frame = state->current_frame;
-      // jump to "below" frame and push the return value
-      state->current_frame = old_frame->f_back;
+      // jump to prev frame and push the return value
+      state->current_frame = old_frame->prev;
       stack_push(state->current_frame->value_stack, return_value);
       state->recursion_depth -= 1;
       // TODO: deallocate old frame!
@@ -288,7 +311,7 @@ int main(int argc, char **argv) {
 
   // initialise state with current frame
   PyFrameObject bottom_frame;
-  py_frame_object_init(&bottom_frame, 0);
+  py_frame_object_init(&bottom_frame);
   PyState state; // essentially interpreter state
   state.current_frame = &bottom_frame; 
   state.recursion_depth = 0;
@@ -298,21 +321,17 @@ int main(int argc, char **argv) {
     exit(1);
   }
 
-  // allocate string array of compiled bytecode instructions
-  char **instructions = malloc(100 * sizeof(char *));
-  int *offset = malloc(sizeof(int));
-
   // -> walk into a total string array of instructions
   char *input = read_file(argv[1]);
   int *distance = malloc(sizeof(int));
   Module *module = parse(input, 0, distance);
-  module_walk(module, instructions, offset);
+  PyCodeObject *code = module_walk(module);
+  state.current_frame->code = code;
 
   // -> interpret the bytecode - handle_bytecode increments program counter
   int i = state.current_frame->bytecode_offset;
-  while (instructions[i] != NULL) {
-    printf("%d: %s\n", i, instructions[i]);
-    handle_bytecode(&state, &vars, instructions[i]);
+  while (state.current_frame->code->bytecode[i] != NULL) {
+    handle_bytecode(&state, &vars, state.current_frame->code->bytecode[i]);
     i = state.current_frame->bytecode_offset; // current_frame may have changed!
   }
 

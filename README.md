@@ -1,6 +1,18 @@
 A very inefficient implementation of a small subset of Python, inspired by CPython
 
-## Usage
+## To-do
+
+Support function arguments. 
+
+Steps (in parser):
+ - emit arg count with MAKE_FUNCTION opcode
+ - emit a LOAD_NAME,'\<argname\>' for each argument
+
+(and in the stack machine)
+ - on MAKE_FUNCTION, save arg count in PyFuncObject
+ - on CALL_FUNCTION, push expressions in argument slots to stack before we jump to function start offset - these are loaded by the LOAD_NAME instructions into local variables
+
+## Current
 
 Now supports (argument-less :S) functions, e.g.
 
@@ -40,7 +52,7 @@ $ spython main.py
 RecursionError: maximum recursion depth exceeded
 ```
 
-## Current
+## Details
 
 The stack machine currently supports the following opcodes:
  - LOAD_CONST

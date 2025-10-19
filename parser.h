@@ -1,6 +1,8 @@
 #ifndef PARSER_H
 #define PARSER_H
 
+#include "hash-table.h"
+
 // NOTE: define our nodes
 typedef enum NodeType {
   CONSTANT,
@@ -36,12 +38,13 @@ typedef struct Return {
 
 typedef struct FunctionDef {
   char *name;
-  char *args[5]; // NOTE: limit to 5 arguments
+  char **args; // NOTE: limit to 5 arguments
   struct Module *body;
 } FunctionDef;
 
 typedef struct CallFunction {
   Name *func;
+  struct Node **args;
 } CallFunction;
 
 typedef struct Node {
@@ -62,7 +65,7 @@ typedef struct Module {
 } Module;
 
 void module_print(Module *m);
-void module_walk(Module *m, char **output, int *offset);
+PyCodeObject *module_walk(Module *m);
 Module *parse(const char *input, int indentation_depth, int *distance_travelled); // main entry point
 
 #endif
