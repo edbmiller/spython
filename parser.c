@@ -14,13 +14,11 @@ void walk(Node *node, char **output, int *offset) {
   // first: allocate string
   switch (node->type) {
     case CONSTANT:
-      // printf("%d: LOAD_CONST,%d\n", *offset, node->data.constant->value);
       output[*offset] = malloc(32); 
       sprintf(output[*offset], "LOAD_CONST,%d", node->data.constant->value);
       *offset += 1; 
       break; 
     case NAME:
-      // printf("%d: LOAD_NAME,'%s'\n", *offset, node->data.name->id);
       output[*offset] = malloc(32); 
       sprintf(output[*offset], "LOAD_NAME,'%s'", node->data.name->id);
       *offset += 1;
@@ -28,70 +26,41 @@ void walk(Node *node, char **output, int *offset) {
     case BINARYADD:
       walk(node->data.binary_add->left, output, offset);
       walk(node->data.binary_add->right, output, offset);
-      // printf("%d: ADD\n", *offset);
-      output[*offset] = malloc(32); 
       output[*offset] = "ADD";
       *offset += 1;
       break;
     case ASSIGN:
-      // walk expression node
       walk(node->data.assign->value, output, offset);
-      // printf("%d: STORE_NAME,'%s'\n", *offset, node->data.assign->target->id);
       output[*offset] = malloc(32); 
       sprintf(output[*offset], "STORE_NAME,'%s'", node->data.assign->target->id);
       *offset += 1;
       break;
     case FUNCTIONDEF:
       // TODO: walk the arguments and LOAD_NAMEs into locals
-      // NOTE: this is the offset we're putting the MAKE_FUNCTION
-      // opcode at - have to patch this after we've walked the
-      // body so we know where the function ends
       output[*offset] = malloc(32);
       int make_function_bytecode_offset = *offset;
       *offset += 1;
-      module_walk(node->data.function_def->body, output, offset);        
-      // patch MAKE_FUNCTION with reference to jump point
+      module_walk(node->data.function_def->body, output, offset);
+      // now offset points at next free bytecode slot after function body
       // stack VM interprets this as "put offset+1 on stack and JUMP to arg"
-      sprintf(output[make_function_bytecode_offset], "MAKE_FUNCTION,'%d'", *offset);
-      // printf("%d: MAKE_FUNCTION,'%d'\n", make_function_bytecode_offset, *offset);
+      sprintf(output[make_function_bytecode_offset], "MAKE_FUNCTION,%d", *offset);
       output[*offset] = malloc(32);
       sprintf(output[*offset], "STORE_NAME,'%s'", node->data.function_def->name);
-      // printf("%d: STORE_NAME,'%s'\n", *offset, node->data.function_def->name);
       *offset += 1;
       break;
     case RETURN:
       walk(node->data.ret->value, output, offset);
-      // printf("%d: RETURN\n", *offset);
-      output[*offset] = malloc(32); 
       output[*offset] = "RETURN";
       *offset += 1;
       break;
     case CALLFUNCTION:
-      // emit a CALL_FUNCTION opcode which makes
-      // stack VM add a call frame and jump       
-      // printf("%d: CALL_FUNCTION,'%s'\n", *offset, node->data.call_function->func->id);
       output[*offset] = malloc(32);
-      sprintf(output[*offset], "CALL_FUNCTION,'%s'", node->data.call_function->func->id);
+      sprintf(output[*offset], "LOAD_NAME,'%s'", node->data.call_function->func->id);
+      output[++(*offset)] = "CALL_FUNCTION";
       *offset += 1;
       break;
   }
 }
-
-void module_print(Module *module) {
-  // debugging - print node types
-  printf("Module:\n");
-  for (int i = 0; module->nodes[i] != NULL; i++) {
-    printf(" - node: ");
-    switch (module->nodes[i]->type) {
-      case ASSIGN:
-        printf("ASSIGN\n");
-        break;
-      case RETURN:
-        printf("RETURN\n");
-        break;
-    }
-  }
-} 
 
 void module_walk(Module *module, char **output, int *offset) {
   // just walk for each node
@@ -296,49 +265,8 @@ Module *parse(const char *input, int depth, int *travelled) {
   return module;
 }
 
+/*
 int main() {
-  
-  /*  
-  // constants
-  Constant left;
-  left.value = 1;
-  Node left_node;
-  left_node.type = CONSTANT;
-  left_node.data.constant = &left;
-
-  Constant right;
-  right.value = 2;
-  Node right_node;
-  right_node.type = CONSTANT;
-  right_node.data.constant = &right;
-
-  // fill children of BinaryAdd node
-  BinaryAdd add;
-  add.left = &left_node;
-  add.right = &right_node;
-  Node add_node;
-  add_node.type = BINARYADD;
-  add_node.data.binary_add = &add;
-
-  // node for variable name
-  Name name;
-  name.id = "x";
-  
-  // fill assignment node   
-  Assign assign;
-  assign.target = &name;
-  assign.value = &add_node;
-
-  Node node;
-  node.type = ASSIGN;
-  node.data.assign = &assign;
-
-  // traverse example AST
-  char **output = malloc(50 * sizeof(char *));
-  int *offset = malloc(sizeof(int));
-  *offset = 0;
-  // walk(&node, output, offset);
-  */
 
   char **output = malloc(50 * sizeof(char *));
   int *offset = malloc(sizeof(int));
@@ -354,3 +282,4 @@ int main() {
 
   return 0;
 }
+*/

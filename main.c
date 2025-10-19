@@ -25,15 +25,15 @@ int stack_is_full(Stack *s) {
   return s->top == MAX_STACK_SIZE - 1;
 }
 
-void stack_push(Stack *s, int *value) {
+void stack_push(Stack *s, PyObject *object) {
   if (stack_is_full(s)) {
     printf("Stack overflow!\n");
     exit(1);
   } else
-    s->data[++s->top] = value;
+    s->data[++s->top] = object;
 }
 
-int *stack_pop(Stack *s) {
+PyObject *stack_pop(Stack *s) {
   if (stack_is_empty(s)) {
     printf("Stack underflow!\n");
     exit(1);
@@ -41,6 +41,7 @@ int *stack_pop(Stack *s) {
     return s->data[s->top--];
 }
 
+/* TODO: fix after breaking with PyObjects
 void stack_print(Stack *s) {
   if (stack_is_empty(s))
     printf("[]\n");
@@ -52,12 +53,20 @@ void stack_print(Stack *s) {
     printf("]\n");
   }
 }
+*/
 
 typedef struct PyFrameObject {
   int bytecode_offset;
   struct PyFrameObject *f_back; // previous frame
   Stack *value_stack;
 } PyFrameObject;
+
+void py_frame_object_init(PyFrameObject *frame, int bytecode_offset) {
+  frame->bytecode_offset = bytecode_offset;
+  frame->f_back = NULL;
+  frame->value_stack = malloc(sizeof(Stack));
+  stack_init(frame->value_stack);
+}
 
 typedef struct PyState {
   PyFrameObject *current_frame;
@@ -95,6 +104,10 @@ OpCode get_opcode(const char *input) {
     return OP_LOAD_NAME;
   else if (equals_opcode(input, i, "STORE_NAME"))
     return OP_STORE_NAME;
+  else if (equals_opcode(input, i, "MAKE_FUNCTION"))
+    return OP_MAKE_FUNCTION;
+  else if (equals_opcode(input, i, "CALL_FUNCTION"))
+    return OP_CALL_FUNCTION;
   else
     return OP_UNKNOWN;
 }
@@ -153,7 +166,7 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
   OpCode opcode = get_opcode(input); 
   char *varname;
   switch (opcode) { 
-    case OP_LOAD_CONST:    
+    case OP_LOAD_CONST:
       // create object
       PyIntObject *constant = malloc(sizeof(PyIntObject));
       constant->value = get_operand(input);
@@ -197,13 +210,14 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
         exit(1); 
       }
     case OP_MAKE_FUNCTION:
-      int function_start_offset = get_operand(input);
+      int jump_offset = get_operand(input);
+      // ^ first line after function body finishes
       PyFuncObject *new_func = malloc(sizeof(PyFuncObject));
       new_func->type = PY_FUNC;
-      new_func->bytecode_offset = function_start_offset;
+      new_func->bytecode_offset = state->current_frame->bytecode_offset + 1;
       // push onto stack
       stack_push(state->current_frame->value_stack, (PyObject *) new_func);
-      state->current_frame->bytecode_offset += 1;
+      state->current_frame->bytecode_offset = jump_offset;
       break;
     case OP_CALL_FUNCTION:
       // push a new frame to callstack, remembering our
@@ -211,9 +225,10 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
       // NOTE: top of value stack needs to be a function lol
       PyFuncObject *func = (PyFuncObject *) stack_pop(state->current_frame->value_stack); 
       PyFrameObject *new_frame = malloc(sizeof(PyFrameObject));
-      new_frame->bytecode_offset = func->bytecode_offset;
+      py_frame_object_init(new_frame, func->bytecode_offset);
       new_frame->f_back = state->current_frame;
-      // set current frame
+      // increment pc on the current frame so we pop back to the next instruction
+      state->current_frame->bytecode_offset += 1;
       state->current_frame = new_frame;
       break;
     case OP_RETURN:
@@ -232,12 +247,29 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
       printf("error: bad opcode\n");
       exit(1); 
   }
+}
 
-  // printf("Stack: ");
-  // stack_print(s);
-  // printf("Variables: ");
-  // hashtable_print(vars);
-  // printf("---------------\n");
+char *read_file(const char *filename) {
+  FILE *f = fopen(filename, "r");
+  if (!f) return NULL;
+
+  // seek EOF
+  fseek(f, 0, SEEK_END);
+  int size = ftell(f);
+  rewind(f);
+
+  // alloc buffer
+  char *buffer = malloc(size + 1);
+  if (!buffer) {
+    fclose(f);
+    return NULL;
+  }
+
+  // read the file
+  size_t read_size = fread(buffer, 1, size, f);
+  buffer[read_size] = '\0';
+  fclose(f);
+  return buffer;
 }
 
 int main(int argc, char **argv) {
@@ -248,11 +280,7 @@ int main(int argc, char **argv) {
 
   // initialise state with current frame
   PyFrameObject bottom_frame;
-  bottom_frame.bytecode_offset = 0;
-  // ...and its value stack
-  Stack s;
-  stack_init(&s);
-  bottom_frame.value_stack = &s;
+  py_frame_object_init(&bottom_frame, 0);
   PyState state; // essentially interpreter state
   state.current_frame = &bottom_frame; 
 
@@ -265,22 +293,16 @@ int main(int argc, char **argv) {
   char **instructions = malloc(100 * sizeof(char *));
   int *offset = malloc(sizeof(int));
 
-  // TODO: parse file into a list of bytecode modules
   // -> walk into a total string array of instructions
-  /*
-  FILE *file = fopen(argv[1], "r");
-  char input[60]; // a line of input
-  while (fgets(input, 60, file)) {
-    Module *module = malloc(sizeof(Module));
-    module = parse(input);
-    module_walk(module, instructions, offset);
-  }
-  */ 
+  char *input = read_file(argv[1]);
+  int *distance = malloc(sizeof(int));
+  Module *module = parse(input, 0, distance);
+  module_walk(module, instructions, offset);
 
   // -> interpret the bytecode - handle_bytecode increments program counter
   int i = state.current_frame->bytecode_offset;
   while (instructions[i] != NULL) {
-    // printf("%d: %s\n", i, instructions[i]);
+    printf("%d: %s\n", i, instructions[i]);
     handle_bytecode(&state, &vars, instructions[i]);
     i = state.current_frame->bytecode_offset; // current_frame may have changed!
   }

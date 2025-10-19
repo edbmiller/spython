@@ -8,30 +8,6 @@ $ spython main.py # main.py: `x = 1 + 2\nprint(x)\n`
 3
 ```
 
-interactive (bytecode) mode:
-```
-$ spython
->> LOAD_CONST,3
-Stack: [3]
-Variables: {}
-
->> STORE_NAME,'x'
-Stack: []
-Variables: {'x':'3',}
-
->> LOAD_CONST,2
-Stack: [2]
-Variables: {'x':'3',}
-
->> LOAD_NAME,'x'
-Stack: [2, 3]
-Variables: {'x':'3',}
-
->> ADD
-Stack: [5]
-Variables: {'x':'3',}
-```
-
 ## Current
 
 The stack machine currently supports the following opcodes:
@@ -40,14 +16,26 @@ The stack machine currently supports the following opcodes:
  - LOAD_NAME
  - ADD
  - MAKE_FUNCTION
+ - RETURN
+ - CALL_FUNCTION
 
-...and next we'll implement CALL_FUNCTION and RETURN with a callstack. We have a FunctionDef AST node with a name and instruction offset which emits MAKE_FUNCTION and STORE_NAME,\<name\> after its code logic bytecodes have been emitted. 
+We have a FunctionDef AST node with a name and body, which emits (in this order):
+ - MAKE_FUNCTION,\<int\> with arg the int offset of the line after the final line of the function body
+ - bytecode instructions for the function body
+ - STORE_NAME,\<str\> with arg the function name
 
-Basic idea: we remember the instruction offset we've jumped from in the caller frame - when we return, we push the return'd value onto the value stack of the frame "below", and jump to the remembered instruction.
+On MAKE_FUNCTION opcodes, the stack VM will:
+ - allocate a PyFuncObject with a reference `function_start_offset` to the int offset of the first instruction of the function body
+ - push this object onto stack
+
+...and after the subsequent STORE_NAME, we insert into the variables hashtable (after casting to PyObject).
 
 ## To-do
 
+ - implement stack machine logic for CALL_FUNCTION
+
+## To-do eventually...
+
  - fix memory leaks
- - add functions
  - add some builtins e.g. `print`
  - add reference counting
