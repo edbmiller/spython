@@ -6,6 +6,7 @@
 #include "parser.h"
 
 #define MAX_STACK_SIZE 100
+#define MAX_RECURSION_DEPTH 1000
 
 // NOTE: value stack (each frame has one)
 typedef struct {
@@ -70,6 +71,7 @@ void py_frame_object_init(PyFrameObject *frame, int bytecode_offset) {
 
 typedef struct PyState {
   PyFrameObject *current_frame;
+  int recursion_depth;
 } PyState;  
 
 // NOTE: define opcodes
@@ -223,6 +225,10 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
       // push a new frame to callstack, remembering our
       // current bytecode offset in the current frame
       // NOTE: top of value stack needs to be a function lol
+      if (state->recursion_depth == MAX_RECURSION_DEPTH) {
+        printf("RecursionError: maximum recursion depth exceeded\n");
+        exit(1);
+      }
       PyFuncObject *func = (PyFuncObject *) stack_pop(state->current_frame->value_stack); 
       PyFrameObject *new_frame = malloc(sizeof(PyFrameObject));
       py_frame_object_init(new_frame, func->bytecode_offset);
@@ -230,6 +236,7 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
       // increment pc on the current frame so we pop back to the next instruction
       state->current_frame->bytecode_offset += 1;
       state->current_frame = new_frame;
+      state->recursion_depth += 1;
       break;
     case OP_RETURN:
       // pop a frame from the callstack, return to the
@@ -241,6 +248,7 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
       // jump to "below" frame and push the return value
       state->current_frame = old_frame->f_back;
       stack_push(state->current_frame->value_stack, return_value);
+      state->recursion_depth -= 1;
       // TODO: deallocate old frame!
       break;
     case OP_UNKNOWN:
@@ -283,6 +291,7 @@ int main(int argc, char **argv) {
   py_frame_object_init(&bottom_frame, 0);
   PyState state; // essentially interpreter state
   state.current_frame = &bottom_frame; 
+  state.recursion_depth = 0;
 
   if (argv[1] == NULL) {
     printf("interactive mode unsupported! give me a file..\n");  

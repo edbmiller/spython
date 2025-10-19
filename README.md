@@ -2,10 +2,42 @@ A very inefficient implementation of a small subset of Python, inspired by CPyth
 
 ## Usage
 
-file mode:
+Now supports (argument-less :S) functions, e.g.
+
+```py
+# main.py
+def foo():
+    x = 1 + 2
+    return x
+
+a = foo()
 ```
-$ spython main.py # main.py: `x = 1 + 2\nprint(x)\n`
-3
+
+executes the following bytecode sequence on the stack VM (original line numbers on the left):
+
+```
+0: MAKE_FUNCTION,7
+7: STORE_NAME,'foo'
+8: LOAD_NAME,'foo'
+9: CALL_FUNCTION
+1: LOAD_CONST,1
+2: LOAD_CONST,2
+3: ADD
+4: STORE_NAME,'x'
+5: LOAD_NAME,'x'
+6: RETURN
+10: STORE_NAME,'a'
+```
+
+And we enforce a recursion limit:
+
+```
+# main.py
+def foo():
+    return foo()
+
+$ spython main.py
+RecursionError: maximum recursion depth exceeded
 ```
 
 ## Current
@@ -29,10 +61,6 @@ On MAKE_FUNCTION opcodes, the stack VM will:
  - push this object onto stack
 
 ...and after the subsequent STORE_NAME, we insert into the variables hashtable (after casting to PyObject).
-
-## To-do
-
- - implement stack machine logic for CALL_FUNCTION
 
 ## To-do eventually...
 
