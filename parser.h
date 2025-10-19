@@ -8,7 +8,8 @@ typedef enum NodeType {
   BINARYADD,
   ASSIGN,
   FUNCTIONDEF,
-  RETURN
+  RETURN,
+  CALLFUNCTION
 } NodeType;
 
 typedef struct Constant {
@@ -39,6 +40,10 @@ typedef struct FunctionDef {
   struct Module *body;
 } FunctionDef;
 
+typedef struct CallFunction {
+  Name *func;
+} CallFunction;
+
 typedef struct Node {
   NodeType type;
   union {
@@ -48,6 +53,7 @@ typedef struct Node {
     Assign *assign;
     FunctionDef *function_def;
     Return *ret;
+    CallFunction *call_function;
   } data;
 } Node;
 
