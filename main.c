@@ -64,18 +64,24 @@ typedef struct PyFrameObject {
   Stack *value_stack;
 } PyFrameObject;
 
-void py_frame_object_init(PyFrameObject *frame) {
+void py_frame_object_init(PyFrameObject *frame, HashTable *locals) {
   frame->bytecode_offset = 0;
-  frame->locals = malloc(sizeof(HashTable));
   frame->prev = NULL;
   frame->value_stack = malloc(sizeof(Stack));
   stack_init(frame->value_stack);
-  hashtable_init(frame->locals);
+  // in module-level frame we pass in our own locals (pointer to module dict)
+  if (locals == NULL) {
+    frame->locals = malloc(sizeof(HashTable));
+    hashtable_init(frame->locals);
+  } else {
+    frame->locals = locals; 
+  }
 }
 
 typedef struct PyState {
   PyFrameObject *current_frame;
   int recursion_depth;
+  HashTable *globals;
 } PyState;  
 
 // NOTE: define opcodes
@@ -167,7 +173,7 @@ char *get_string_operand(const char *input) {
   return operand;  
 }
 
-void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
+void handle_bytecode(PyState *state, const char *input) {
   // take a bytecode instruction and mutate frame and/or its stack
   OpCode opcode = get_opcode(input); 
   char *varname;
@@ -183,7 +189,7 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
       // save stack[-1] to variable named operand
       PyObject *top = stack_pop(state->current_frame->value_stack);
       varname = get_string_operand(input);
-      hashtable_insert(vars, varname, top);
+      hashtable_insert(state->current_frame->locals, varname, top); // in bottom frame this points to globals
       state->current_frame->bytecode_offset += 1;
       break;
     case OP_LOAD_NAME:
@@ -193,12 +199,12 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
         printf("error: bad operand\n");
         exit(1);
       }
-      // lookup in locals then vars
+      // lookup in locals then globals
       PyObject *localobject = hashtable_get(state->current_frame->locals, varname);
       if (localobject != NULL) {
         stack_push(state->current_frame->value_stack, localobject);
       } else {
-        PyObject *globalobject = hashtable_get(vars, varname); 
+        PyObject *globalobject = hashtable_get(state->globals, varname); 
         if (globalobject != NULL) {
           stack_push(state->current_frame->value_stack, globalobject);
         } else {
@@ -250,7 +256,7 @@ void handle_bytecode(PyState *state, HashTable *vars, const char *input) {
       PyFuncObject *func = (PyFuncObject *) stack_pop(state->current_frame->value_stack); 
       // init new frame and populate locals
       PyFrameObject *new_frame = malloc(sizeof(PyFrameObject));
-      py_frame_object_init(new_frame);
+      py_frame_object_init(new_frame, NULL);
       for (int j=0; j<arg_count; j++) {
         hashtable_insert(new_frame->locals, func->code->argnames[j], args[j]);
       }
@@ -305,16 +311,18 @@ char *read_file(const char *filename) {
 
 int main(int argc, char **argv) {
 
-  // initialise variables hash-table
-  HashTable vars;
-  hashtable_init(&vars);
+  // initialise globals hash-table
+  HashTable globals;
+  hashtable_init(&globals);
 
   // initialise state with current frame
   PyFrameObject bottom_frame;
-  py_frame_object_init(&bottom_frame);
+  py_frame_object_init(&bottom_frame, &globals);
+
   PyState state; // essentially interpreter state
   state.current_frame = &bottom_frame; 
   state.recursion_depth = 0;
+  state.globals = &globals;
 
   if (argv[1] == NULL) {
     printf("interactive mode unsupported! give me a file..\n");  
@@ -331,7 +339,7 @@ int main(int argc, char **argv) {
   // -> interpret the bytecode - handle_bytecode increments program counter
   int i = state.current_frame->bytecode_offset;
   while (state.current_frame->code->bytecode[i] != NULL) {
-    handle_bytecode(&state, &vars, state.current_frame->code->bytecode[i]);
+    handle_bytecode(&state, state.current_frame->code->bytecode[i]);
     i = state.current_frame->bytecode_offset; // current_frame may have changed!
   }
 
