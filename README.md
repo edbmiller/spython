@@ -1,44 +1,20 @@
 A very inefficient implementation of a small subset of Python, inspired by CPython
 
-## To-do
+## Working on...
 
-Support function arguments. 
-
-Steps (in parser):
- - emit arg count with MAKE_FUNCTION opcode
- - emit a LOAD_NAME,'\<argname\>' for each argument
-
-(and in the stack machine)
- - on MAKE_FUNCTION, save arg count in PyFuncObject
- - on CALL_FUNCTION, push expressions in argument slots to stack before we jump to function start offset - these are loaded by the LOAD_NAME instructions into local variables
+1. Support if/else with int comparisons and POP_JUMP_IF_FALSE
 
 ## Current
 
-Now supports (argument-less :S) functions, e.g.
+Now supports functions, e.g.
 
 ```py
 # main.py
-def foo():
-    x = 1 + 2
+def foo(a, b):
+    x = a + b
     return x
 
-a = foo()
-```
-
-executes the following bytecode sequence on the stack VM (original line numbers on the left):
-
-```
-0: MAKE_FUNCTION,7
-7: STORE_NAME,'foo'
-8: LOAD_NAME,'foo'
-9: CALL_FUNCTION
-1: LOAD_CONST,1
-2: LOAD_CONST,2
-3: ADD
-4: STORE_NAME,'x'
-5: LOAD_NAME,'x'
-6: RETURN
-10: STORE_NAME,'a'
+result = foo()
 ```
 
 And we enforce a recursion limit:

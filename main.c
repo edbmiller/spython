@@ -175,6 +175,7 @@ char *get_string_operand(const char *input) {
 
 void handle_bytecode(PyState *state, const char *input) {
   // take a bytecode instruction and mutate frame and/or its stack
+  // printf("DEBUG: handling instruction: %s\n", input);
   OpCode opcode = get_opcode(input); 
   char *varname;
   switch (opcode) { 
@@ -253,19 +254,28 @@ void handle_bytecode(PyState *state, const char *input) {
         args[i] = stack_pop(state->current_frame->value_stack);
       }
       // pop callable
-      PyFuncObject *func = (PyFuncObject *) stack_pop(state->current_frame->value_stack); 
-      // init new frame and populate locals
-      PyFrameObject *new_frame = malloc(sizeof(PyFrameObject));
-      py_frame_object_init(new_frame, NULL);
-      for (int j=0; j<arg_count; j++) {
-        hashtable_insert(new_frame->locals, func->code->argnames[j], args[j]);
+      PyObject *f = stack_pop(state->current_frame->value_stack); 
+      if (f->type == PY_FUNC) {
+        // python functions
+        PyFuncObject *func = (PyFuncObject *) f;
+        // init new frame and populate locals
+        PyFrameObject *new_frame = malloc(sizeof(PyFrameObject));
+        py_frame_object_init(new_frame, NULL);
+        for (int j=0; j<arg_count; j++) {
+          hashtable_insert(new_frame->locals, func->code->argnames[j], args[j]);
+        }
+        new_frame->prev = state->current_frame;
+        new_frame->code = func->code;
+        // increment pc on the current frame so we pop back to the next instruction
+        state->current_frame->bytecode_offset += 1;
+        state->current_frame = new_frame;
+        state->recursion_depth += 1;
+      } else if (f->type == PY_CFUNC) {
+        PyCFuncObject *cfunc = (PyCFuncObject *) f;
+        PyObject *result = cfunc->function(args[0]);
+        stack_push(state->current_frame->value_stack, result);
+        state->current_frame->bytecode_offset += 1; 
       }
-      new_frame->prev = state->current_frame;
-      new_frame->code = func->code;
-      // increment pc on the current frame so we pop back to the next instruction
-      state->current_frame->bytecode_offset += 1;
-      state->current_frame = new_frame;
-      state->recursion_depth += 1;
       break;
     case OP_RETURN:
       // pop a frame from the callstack, return to the
@@ -309,11 +319,37 @@ char *read_file(const char *filename) {
   return buffer;
 }
 
+// BUILT-INS
+PyObject *py_builtin_print(PyObject *arg) {
+  switch (arg->type) {
+    case PY_INT:
+      printf("%d\n", ((PyIntObject *) arg)->value);
+      break;
+    case PY_CODE:
+      printf("error: print not defined for code objects\n");
+      break;
+    case PY_FUNC:
+      printf("error: print not defined for functions\n");
+      break;
+    case PY_CFUNC:
+      printf("error: print not defined for builtins\n");
+      break;
+  }
+  return NULL;
+}
+
 int main(int argc, char **argv) {
 
   // initialise globals hash-table
   HashTable globals;
   hashtable_init(&globals);
+  
+  // load builtins
+  PyCFunction py_builtin_print_function = py_builtin_print;
+  PyCFuncObject *py_builtin_print_object = malloc(sizeof(PyCFuncObject));
+  py_builtin_print_object->type = PY_CFUNC;
+  py_builtin_print_object->function = py_builtin_print_function;
+  hashtable_insert(&globals, "print", py_builtin_print_object);
 
   // initialise state with current frame
   PyFrameObject bottom_frame;

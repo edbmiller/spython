@@ -4,7 +4,8 @@
 typedef enum {
   PY_INT,
   PY_CODE,
-  PY_FUNC
+  PY_FUNC,
+  PY_CFUNC,
 } PyType;
 
 // NOTE: this is what goes in the hashtables :3
@@ -28,6 +29,13 @@ typedef struct PyFuncObject {
   PyType type;
   PyCodeObject *code;
 } PyFuncObject;
+
+typedef PyObject *(*PyCFunction)(PyObject *arg);
+
+typedef struct PyCFuncObject {
+  PyType type;
+  PyCFunction function; // pointer to a C function
+} PyCFuncObject;
 
 typedef struct Entry {
   char *key; // NOTE: points to first char
