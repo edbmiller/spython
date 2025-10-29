@@ -374,7 +374,6 @@ Module *parse(const char *input, int depth, int *travelled) {
         }
       
         // otherwise -> pure expression
-        printf("DEBUG: parsing pure expression... %.*s\n", len, line);
         module->nodes[node_idx] = parse_expression(line, len);
         node_idx++;
       }

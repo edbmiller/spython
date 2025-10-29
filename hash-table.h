@@ -3,6 +3,7 @@
 
 typedef enum {
   PY_INT,
+  PY_TUPLE,
   PY_CODE,
   PY_FUNC,
   PY_CFUNC,
@@ -18,11 +19,17 @@ typedef struct PyIntObject {
   int value;
 } PyIntObject;
 
+typedef struct PyTupleObject {
+  PyType type;
+  int size;
+  PyObject **elements; // TODO: allocate line with the [] trick
+} PyTupleObject; 
+
 typedef struct PyCodeObject {
   PyType type;
   char **bytecode; // array of bytecode instructions
   PyObject **consts;  // e.g. literals, compiled function/code objects
-  char **argnames;
+  char **argnames; // TODO: allocate inline
 } PyCodeObject;
 
 typedef struct PyFuncObject {
@@ -30,7 +37,7 @@ typedef struct PyFuncObject {
   PyCodeObject *code;
 } PyFuncObject;
 
-typedef PyObject *(*PyCFunction)(PyObject *arg);
+typedef PyObject *(*PyCFunction)(PyTupleObject *args);
 
 typedef struct PyCFuncObject {
   PyType type;

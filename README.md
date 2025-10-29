@@ -3,7 +3,7 @@ A very inefficient implementation of a small subset of Python, inspired by CPyth
 ## Working on...
 
 1. Done! Support pure expressions (e.g a line like `print(3)` or `4 + 5`) 
-2. Add PyTupleObject and pass args as a tuple to `print`
+2. Done! Add PyTupleObject and pass args as a tuple to `print`
 3. Support if/else with int comparisons and POP_JUMP_IF_FALSE
 
 ## Current

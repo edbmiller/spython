@@ -176,7 +176,7 @@ char *get_string_operand(const char *input) {
 
 void handle_bytecode(PyState *state, const char *input) {
   // take a bytecode instruction and mutate frame and/or its stack
-  printf("DEBUG: handling instruction: %s\n", input);
+  // printf("DEBUG: handling instruction: %s\n", input);
   OpCode opcode = get_opcode(input); 
   char *varname;
   switch (opcode) { 
@@ -273,7 +273,13 @@ void handle_bytecode(PyState *state, const char *input) {
         state->recursion_depth += 1;
       } else if (f->type == PY_CFUNC) {
         PyCFuncObject *cfunc = (PyCFuncObject *) f;
-        PyObject *result = cfunc->function(args[0]);
+        // malloc args tuple
+        PyTupleObject *py_args = malloc(sizeof(PyTupleObject));
+        py_args->type = PY_TUPLE;
+        py_args->elements = malloc(arg_count * sizeof(PyObject *));
+        for (int i=0; args[i] != NULL; i++)
+          py_args->elements[i] = args[i];
+        PyObject *result = cfunc->function(py_args);
         stack_push(state->current_frame->value_stack, result);
         state->current_frame->bytecode_offset += 1; 
       }
@@ -324,20 +330,23 @@ char *read_file(const char *filename) {
 }
 
 // BUILT-INS
-PyObject *py_builtin_print(PyObject *arg) {
-  switch (arg->type) {
-    case PY_INT:
-      printf("%d\n", ((PyIntObject *) arg)->value);
-      break;
-    case PY_CODE:
-      printf("error: print not defined for code objects\n");
-      break;
-    case PY_FUNC:
-      printf("error: print not defined for functions\n");
-      break;
-    case PY_CFUNC:
-      printf("error: print not defined for builtins\n");
-      break;
+PyObject *py_builtin_print(PyTupleObject *args) {
+  for (int i=0; args->elements[i] != NULL; i++) { 
+    switch (args->elements[i]->type) {
+      case PY_INT:
+        printf("%d", ((PyIntObject *) args->elements[i])->value);
+        break;
+      case PY_CODE:
+        printf("error: print not defined for code objects\n");
+        break;
+      case PY_FUNC:
+        printf("error: print not defined for functions\n");
+        break;
+      case PY_CFUNC:
+        printf("error: print not defined for builtins\n");
+        break;
+    }
+    printf(" ");
   }
   return NULL;
 }
@@ -373,8 +382,6 @@ int main(int argc, char **argv) {
   char *input = read_file(argv[1]);
   int *distance = malloc(sizeof(int));
   Module *module = parse(input, 0, distance);
-  for (int j=0; module->nodes[j] != NULL; j++)
-    printf("DEBUG: NODES: %d\n", module->nodes[j]->type); 
   PyCodeObject *code = module_walk(module);
   state.current_frame->code = code;
 
