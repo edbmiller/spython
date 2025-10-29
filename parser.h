@@ -11,7 +11,8 @@ typedef enum NodeType {
   ASSIGN,
   FUNCTIONDEF,
   RETURN,
-  CALLFUNCTION
+  CALLFUNCTION,
+  EXPR
 } NodeType;
 
 typedef struct Constant {
@@ -47,6 +48,11 @@ typedef struct CallFunction {
   struct Node **args;
 } CallFunction;
 
+// NOTE: pure expressions e.g. `\n3 + 4` or `\nprint()`
+typedef struct Expr {
+  struct Node *value;
+} Expr;
+
 typedef struct Node {
   NodeType type;
   union {
@@ -57,6 +63,7 @@ typedef struct Node {
     FunctionDef *function_def;
     Return *ret;
     CallFunction *call_function;
+    Expr *expr;
   } data;
 } Node;
 

@@ -95,6 +95,12 @@ void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx
       sprintf(bytecode[*b_idx], "CALL_FUNCTION,%d", i);
       *b_idx += 1;
       break;
+    case EXPR:
+      // walk the expression then pop the result
+      walk(node->data.expr->value, bytecode, b_idx, consts, c_idx);
+      bytecode[*b_idx] = "POP_TOP";
+      *b_idx += 1;
+      break;
   }
 }
 
@@ -363,8 +369,14 @@ Module *parse(const char *input, int depth, int *travelled) {
             assign_node->data.assign = assign;
             module->nodes[node_idx] = assign_node;
             node_idx++; 
+            break;
           }
         }
+      
+        // otherwise -> pure expression
+        printf("DEBUG: parsing pure expression... %.*s\n", len, line);
+        module->nodes[node_idx] = parse_expression(line, len);
+        node_idx++;
       }
       // new line starts on i + 1
       line_start_offset = i + 1 + depth*4;
@@ -380,7 +392,7 @@ int main() {
 
   int *travel = malloc(sizeof(int));
   *travel = 0; // don't need this, just for the call
-  Module *m = parse("def foo(a, b, c):\n    return a + b + c\nx = foo(1, 2, 3)\n", 0, travel);
+  Module *m = parse("result = print(3)\n", 0, travel);
   PyCodeObject *c = module_walk(m);
   int i = 0;
   for (; c->bytecode[i] != NULL; i++)

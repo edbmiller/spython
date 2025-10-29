@@ -93,7 +93,8 @@ typedef enum {
   OP_ADD,
   OP_MAKE_FUNCTION,
   OP_CALL_FUNCTION, // called with int argn, number of args to pop from stack
-  OP_RETURN
+  OP_RETURN,
+  OP_POP_TOP
 } OpCode;
 
 int equals_opcode(const char *input, size_t len, const char *cmd) {
@@ -175,7 +176,7 @@ char *get_string_operand(const char *input) {
 
 void handle_bytecode(PyState *state, const char *input) {
   // take a bytecode instruction and mutate frame and/or its stack
-  // printf("DEBUG: handling instruction: %s\n", input);
+  printf("DEBUG: handling instruction: %s\n", input);
   OpCode opcode = get_opcode(input); 
   char *varname;
   switch (opcode) { 
@@ -290,6 +291,9 @@ void handle_bytecode(PyState *state, const char *input) {
       state->recursion_depth -= 1;
       // TODO: deallocate old frame!
       break;
+    case OP_POP_TOP:
+      stack_pop(state->current_frame->value_stack);
+      break;
     case OP_UNKNOWN:
       printf("error: bad opcode\n");
       exit(1); 
@@ -369,6 +373,8 @@ int main(int argc, char **argv) {
   char *input = read_file(argv[1]);
   int *distance = malloc(sizeof(int));
   Module *module = parse(input, 0, distance);
+  for (int j=0; module->nodes[j] != NULL; j++)
+    printf("DEBUG: NODES: %d\n", module->nodes[j]->type); 
   PyCodeObject *code = module_walk(module);
   state.current_frame->code = code;
 
