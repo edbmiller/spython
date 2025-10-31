@@ -3,6 +3,7 @@
 
 typedef enum {
   PY_INT,
+  PY_BOOL,
   PY_TUPLE,
   PY_CODE,
   PY_FUNC,
@@ -18,6 +19,11 @@ typedef struct PyIntObject {
   PyType type;
   int value;
 } PyIntObject;
+
+typedef struct PyBoolObject {
+  PyType type;
+  int value; // 1 for True
+} PyBoolObject;
 
 typedef struct PyTupleObject {
   PyType type;

@@ -101,6 +101,40 @@ void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx
       bytecode[*b_idx] = "POP_TOP";
       *b_idx += 1;
       break;
+    case IF:
+      walk(node->data.iff->test, bytecode, b_idx, consts, c_idx);
+      int pop_jump_offset = *b_idx; // patch when we know block sizes
+      *b_idx += 1;
+      for (int j=0; node->data.iff->body->nodes[j] != NULL; j++) {
+        walk(node->data.iff->body->nodes[j], bytecode, b_idx, consts, c_idx);     
+      }
+      // printf("DEBUG: walked body\n");
+      if (node->data.iff->orelse != NULL) {
+        // put the extra JUMP after true block and patch POP_JUMP_IF_FALSE
+        int extra_jump_offset = *b_idx; 
+        *b_idx += 1;
+        bytecode[pop_jump_offset] = malloc(32);
+        sprintf(bytecode[pop_jump_offset], "POP_JUMP_IF_FALSE,%d", *b_idx);
+        // now walk the orelse
+        for (int j=0; node->data.iff->orelse->nodes[j] != NULL; j++) {
+          walk(node->data.iff->orelse->nodes[j], bytecode, b_idx, consts, c_idx);     
+        }
+        // finally patch the jump to skip if we've done the true block
+        bytecode[extra_jump_offset] = malloc(32);
+        sprintf(bytecode[extra_jump_offset], "JUMP,%d", *b_idx);
+      } else {
+        bytecode[pop_jump_offset] = malloc(32);
+        sprintf(bytecode[pop_jump_offset], "POP_JUMP_IF_FALSE,%d", *b_idx);
+        // nb. *b_idx has been incr'd by body walk
+      }
+      break;
+    case COMPARE:
+      walk(node->data.compare->left, bytecode, b_idx, consts, c_idx); 
+      walk(node->data.compare->right, bytecode, b_idx, consts, c_idx);   
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "COMPARE,%d", node->data.compare->comparison);
+      *b_idx += 1;
+      break;
   }
 }
 
@@ -134,7 +168,6 @@ Node *parse_expression(const char *input, size_t len) {
   // and emit a AST node - recursive
   // first: find first operator
   for (int i=len; i>=0; i--) {
-    // TODO: do other operators
     if (input[i] == '+') {
       // do LHS - note we start at input[i+2] and have length len-i-2
       Node *left_node = parse_expression(input, i-1); 
@@ -163,8 +196,24 @@ Node *parse_expression(const char *input, size_t len) {
       Node *result_node = malloc(sizeof(Node));
       result_node->type = BINARYADD;
       result_node->data.binary_add = binary_add;
-
       return result_node;
+    } else if (input[i] == '<' || input[i] == '>') {
+      // NOTE: assume ints on each side for now
+      Node *left_node = parse_expression(input, i-1);
+      Node *right_node = parse_expression(input+i+2, len-i-2);
+      Compare *compare = malloc(sizeof(Compare));
+      compare->left = left_node;
+      compare->right = right_node;
+      if (input[i] == '<') {
+        compare->comparison = LESS_THAN;
+      } else {
+        compare->comparison = GREATER_THAN;
+      }
+      // finish 
+      Node *compare_node = malloc(sizeof(Node));  
+      compare_node->type = COMPARE;
+      compare_node->data.compare = compare;
+      return compare_node;
     }
   }
 
@@ -241,11 +290,66 @@ Module *parse(const char *input, int depth, int *travelled) {
 
   while (input[i] != '\0') {
     if (input[i] == '\n') {
+      // check we have whitespace up to `line_start_offset` - otherwise break
+      // because our block has ended
       int len = i - line_start_offset; // our "line" ends BEFORE the \n
+      for (int j=line_start_offset - depth*4; j < line_start_offset; j++) {
+        if (input[j] != ' ') {
+          *travelled -= (len + depth*4); // unscan the line
+          return module;
+        }
+      }
       line = input + line_start_offset;
 
       // ------ BEGIN main character crunching bit
-      if (len == 6 && strncmp(line, "return", 6) == 0) {
+      if (len >= 3 && strncmp(line, "if", 2) == 0) {
+        // NOTE: actually similar to functions - we parse the expression,
+        // then find start of next line and do a sub-parse of that block
+        // at depth + 1
+         
+        // 1. TODO: parse test expression         
+        Node *test_node = parse_expression(line+3, len-4);
+
+        // 2. now parse body into node list
+        // ...have to find start of next line first! 
+        // TODO: errr.. don't think we have to do this?
+        const char *next_line = line;
+        while (*next_line != '\n') {
+          next_line++;
+        }
+        next_line++;
+
+        // parse body and count length
+        int *sub_travelled = malloc(sizeof(int));
+        *sub_travelled = 0;
+        Module *body = parse(next_line, depth + 1, sub_travelled);
+
+        // TODO: 3. check for else on next line
+        // scan line for length etc...
+        int has_orelse = 0;
+        Module *orelse;
+        next_line += *sub_travelled; // now the else line
+        *sub_travelled = 0;
+        if (strncmp(next_line, "else:", 5) == 0) {
+          has_orelse = 1;
+          orelse = parse(next_line+6, depth+1, sub_travelled);
+          i = (next_line)+6 - input + *sub_travelled - 1;
+        }
+        
+        // alloc everything and return
+        If *iff = malloc(sizeof(If));
+        iff->test = test_node;
+        iff->body = body;
+        if (has_orelse == 1) {
+          iff->orelse = orelse;
+        }
+
+        Node *if_node = malloc(sizeof(Node));
+        if_node->type = IF;
+        if_node->data.iff = iff;
+        module->nodes[node_idx] = if_node;
+        node_idx++;
+      } else if (len == 6 && strncmp(line, "return", 6) == 0) {
         // RETURN NULL
         Return *ret = malloc(sizeof(Return)); // NOTE: `value` is null ptr
         Node *ret_node = malloc(sizeof(Node));
@@ -386,12 +490,11 @@ Module *parse(const char *input, int depth, int *travelled) {
   return module;
 }
 
-/*
 int main() {
 
   int *travel = malloc(sizeof(int));
-  *travel = 0; // don't need this, just for the call
-  Module *m = parse("result = print(3)\n", 0, travel);
+  *travel = 0; // don't need this, just for the call 
+  Module *m = parse("if 2 > 3:\n    print(0)\n", 0, travel);
   PyCodeObject *c = module_walk(m);
   int i = 0;
   for (; c->bytecode[i] != NULL; i++)
@@ -399,4 +502,3 @@ int main() {
    
   return 0;
 }
-*/

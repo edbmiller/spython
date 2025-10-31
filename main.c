@@ -94,8 +94,50 @@ typedef enum {
   OP_MAKE_FUNCTION,
   OP_CALL_FUNCTION, // called with int argn, number of args to pop from stack
   OP_RETURN,
-  OP_POP_TOP
+  OP_POP_TOP,
+  OP_COMPARE,
+  OP_JUMP, // arg: target offset
+  OP_POP_JUMP_IF_FALSE // arg: target offset
 } OpCode;
+
+
+typedef PyBoolObject *(*CompareFunc)(PyIntObject *a, PyIntObject *b);
+
+static PyBoolObject *compare_equals(PyIntObject *a, PyIntObject *b) {
+  PyBoolObject *result = malloc(sizeof(PyBoolObject));
+  if (a->value == b->value)
+    result->value = 1;
+  else
+    result->value = 0;
+
+  return result;
+}
+
+static PyBoolObject *compare_greater_than(PyIntObject *a, PyIntObject *b) {
+  PyBoolObject *result = malloc(sizeof(PyBoolObject));
+  if (a->value > b->value)
+    result->value = 1;
+  else
+    result->value = 0;
+
+  return result;
+}
+
+static PyBoolObject *compare_less_than(PyIntObject *a, PyIntObject *b) {
+  PyBoolObject *result = malloc(sizeof(PyBoolObject));
+  if (a->value > b->value)
+    result->value = 1;
+  else
+    result->value = 0;
+
+  return result;
+}
+
+static CompareFunc compare_func_table[3] = {
+  compare_equals,
+  compare_greater_than,
+  compare_less_than
+};
 
 int equals_opcode(const char *input, size_t len, const char *cmd) {
   return (strlen(cmd) == len) && (strncmp(input, cmd, len) == 0);
@@ -121,6 +163,14 @@ OpCode get_opcode(const char *input) {
     return OP_MAKE_FUNCTION;
   else if (equals_opcode(input, i, "CALL_FUNCTION"))
     return OP_CALL_FUNCTION;
+  else if (equals_opcode(input, i, "POP_TOP"))
+    return OP_POP_TOP;
+  else if (equals_opcode(input, i, "COMPARE"))
+    return OP_COMPARE;
+  else if (equals_opcode(input, i, "POP_JUMP_IF_FALSE"))
+    return OP_POP_JUMP_IF_FALSE;
+  else if (equals_opcode(input, i, "JUMP"))
+    return OP_JUMP;
   else
     return OP_UNKNOWN;
 }
@@ -300,6 +350,27 @@ void handle_bytecode(PyState *state, const char *input) {
     case OP_POP_TOP:
       stack_pop(state->current_frame->value_stack);
       break;
+    case OP_COMPARE:
+      // e.g. "COMPARE,0" means '=='
+      // compare and push bool result
+      PyIntObject *right = (PyIntObject *) stack_pop(state->current_frame->value_stack);
+      PyIntObject *left = (PyIntObject *) stack_pop(state->current_frame->value_stack); 
+      int comparison = get_operand(input);
+      PyBoolObject *result = compare_func_table[comparison](left, right);
+      stack_push(state->current_frame->value_stack, (PyObject *) result);
+      state->current_frame->bytecode_offset += 1;
+      break;
+    case OP_POP_JUMP_IF_FALSE:
+      PyBoolObject *top_bool = (PyBoolObject *) stack_pop(state->current_frame->value_stack);
+      int target = get_operand(input); // jump target offset
+      if (top_bool->value == 0)
+        state->current_frame->bytecode_offset = target;
+      else
+        state->current_frame->bytecode_offset += 1;
+      break;
+    case OP_JUMP:
+      state->current_frame->bytecode_offset = get_operand(input);
+      break;
     case OP_UNKNOWN:
       printf("error: bad opcode\n");
       exit(1); 
@@ -346,7 +417,10 @@ PyObject *py_builtin_print(PyTupleObject *args) {
         printf("error: print not defined for builtins\n");
         break;
     }
-    printf(" ");
+    if (args->elements[i+1] != NULL)
+      printf(" ");
+    else
+      printf("\n");
   }
   return NULL;
 }
@@ -385,6 +459,11 @@ int main(int argc, char **argv) {
   PyCodeObject *code = module_walk(module);
   state.current_frame->code = code;
 
+  printf("bytecode -------\n");
+  for (int k=0; code->bytecode[k] != NULL; k++) {
+    printf("%d: %s\n", k, code->bytecode[k]);
+  }
+  printf("output ---------\n");
   // -> interpret the bytecode - handle_bytecode increments program counter
   int i = state.current_frame->bytecode_offset;
   while (state.current_frame->code->bytecode[i] != NULL) {

@@ -2,35 +2,25 @@ A very inefficient implementation of a small subset of Python, inspired by CPyth
 
 ## Working on...
 
-1. Done! Support pure expressions (e.g a line like `print(3)` or `4 + 5`) 
-2. Done! Add PyTupleObject and pass args as a tuple to `print`
-3. Support if/else with int comparisons and POP_JUMP_IF_FALSE
+3a. Done! Support if blocks with int comparisons and POP_JUMP_IF_FALSE
+b. Support else
+c. Support elif
 
-## Current
-
-Now supports functions, e.g.
-
-```py
-# main.py
-def foo(a, b):
-    x = a + b
-    return x
-
-result = foo()
-```
-
-And we enforce a recursion limit:
+How does if work? We compile if-else blocks to the following:
 
 ```
-# main.py
-def foo():
-    return foo()
-
-$ spython main.py
-RecursionError: maximum recursion depth exceeded
+<comparison expression bytecode>
+POP_JUMP_IF_FALSE <int>
+<true branch bytecode>
+JUMP <int> // jump past false branch
+<false branch bytecode>
+...
+<rest of instructions>
 ```
 
-## Details
+where one of the blocks may not exist if we have no else. Any if/elseif/else sequence just gets compiled to a sequence of true/false blocks and some POP_JUMP_IF_FALSE and JUMP commands to link them together!
+
+## Details (...needs updating)
 
 The stack machine currently supports the following opcodes:
  - LOAD_CONST
@@ -54,6 +44,5 @@ On MAKE_FUNCTION opcodes, the stack VM will:
 
 ## To-do eventually...
 
- - fix memory leaks
- - add some builtins e.g. `print`
- - add reference counting
+ - free our memory at some point :P
+ - refcounting

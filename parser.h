@@ -12,8 +12,29 @@ typedef enum NodeType {
   FUNCTIONDEF,
   RETURN,
   CALLFUNCTION,
-  EXPR
+  EXPR,
+  IF,
+  COMPARE
 } NodeType;
+
+static char *node_type_table[9] = {
+  "CONSTANT",
+  "NAME",
+  "BINARYADD",
+  "ASSIGN",
+  "FUNCTIONDEF",
+  "RETURN",
+  "CALLFUNCTION",
+  "EXPR",
+  "IF"
+};
+
+// -------- BINARY COMPARISON OP BOILERPLATE
+typedef enum {
+  EQUALS = 0,
+  GREATER_THAN,
+  LESS_THAN
+} Comparison;
 
 typedef struct Constant {
   int value; // TODO: pointer
@@ -53,6 +74,18 @@ typedef struct Expr {
   struct Node *value;
 } Expr;
 
+typedef struct If {
+  struct Node *test;
+  struct Module *body;
+  struct Module *orelse;
+} If;
+
+typedef struct Compare {
+  struct Node *left;
+  struct Node *right;
+  int comparison;
+} Compare;
+
 typedef struct Node {
   NodeType type;
   union {
@@ -64,6 +97,8 @@ typedef struct Node {
     Return *ret;
     CallFunction *call_function;
     Expr *expr;
+    If *iff;
+    Compare *compare;
   } data;
 } Node;
 
