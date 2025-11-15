@@ -1,9 +1,96 @@
-#ifndef PARSER_H
-#define PARSER_H
+#ifndef TOKEN_H
+#define TOKEN_H
 
 #include "hash-table.h"
 
-// NOTE: define our nodes
+// tokenizer stuff ----------------------------
+typedef enum {
+  // literals + identifiers
+  T_INT,
+  T_NAME,
+
+  // keywords
+  T_DEF,
+  T_RETURN,
+  T_IF,
+  T_ELSE,
+  
+  // operators
+  T_PLUS,
+  T_MINUS,
+  T_ASSIGN,
+  T_MULTIPLY,
+  T_DIVIDE,
+  T_EQ,
+  T_LT,
+  T_GT,
+  T_LEQ,
+  T_GEQ,
+
+  // punctuation + grouping 
+  T_LPAREN,
+  T_RPAREN,
+  T_COMMA,
+  T_COLON,
+  T_NEWLINE,
+  T_INDENT,
+  T_DEDENT,
+  
+  // end of file
+  T_EOF
+} TokenType;
+
+static char *token_table[24] = {
+  "INT",
+  "NAME",
+  "DEF",
+  "RETURN",
+  "IF",
+  "ELSE",
+  "PLUS",
+  "MINUS",
+  "ASSIGN",
+  "MULTIPLY",
+  "DIVIDE",
+  "EQ",
+  "LT",
+  "GT",
+  "LEQ",
+  "GEQ",
+  "LPAREN",
+  "RPAREN",
+  "COMMA",
+  "COLON",
+  "NEWLINE",
+  "INDENT",
+  "DEDENT",
+  "EOF"
+};
+
+typedef struct {
+  const char *kw;
+  int length;
+  TokenType type;
+} Keyword;
+
+static const int num_keywords = 4;
+
+static Keyword keywords[num_keywords] = {
+  { "def", 3, T_DEF },
+  { "return", 6, T_RETURN },
+  { "if", 2, T_IF },
+  { "else", 4, T_ELSE },
+};
+
+// e.g. Token{type: T_NAME, lexeme: "foo"}
+typedef struct {
+  TokenType type;
+  char *lexeme;
+} Token;
+
+Token *tokenize(const char *source);
+
+// parser stuff -------------------------------
 typedef enum NodeType {
   CONSTANT,
   NAME,
@@ -29,7 +116,6 @@ static char *node_type_table[9] = {
   "IF"
 };
 
-// -------- BINARY COMPARISON OP BOILERPLATE
 typedef enum {
   EQUALS = 0,
   GREATER_THAN,
@@ -55,7 +141,7 @@ typedef struct Assign {
 } Assign;
 
 typedef struct Return {
-  struct Node *value; 
+  struct Node *value;
 } Return;
 
 typedef struct FunctionDef {
@@ -69,8 +155,7 @@ typedef struct CallFunction {
   struct Node **args;
 } CallFunction;
 
-// NOTE: pure expressions e.g. `\n3 + 4` or `\nprint()`
-typedef struct Expr {
+typedef struct Expr { // NOTE: pure expressions e.g. `3 + 4`
   struct Node *value;
 } Expr;
 
@@ -108,6 +193,6 @@ typedef struct Module {
 
 void module_print(Module *m);
 PyCodeObject *module_walk(Module *m);
-Module *parse(const char *input, int indentation_depth, int *distance_travelled); // main entry point
+Module *parse(const Token *tokens); // main entry point
 
 #endif
