@@ -191,6 +191,8 @@ Node *parse_expression(const Token *tokens, int *t_idx) {
   if (tokens[++(*t_idx)].type == T_NEWLINE) {
     (*t_idx)++;
     return left_node;
+  } else if (tokens[*t_idx].type == T_EOF) {
+    return left_node;
   } else {
     expect_in(tokens[*t_idx].type, operator_token_group, 2);
     expect(tokens[*t_idx].type, T_PLUS); // TODO: support other ops
@@ -239,19 +241,34 @@ Module *parse(const Token *tokens) {
       expect(tokens[++t_idx].type, T_COLON);
       expect(tokens[++t_idx].type, T_NEWLINE);
       expect(tokens[++t_idx].type, T_INDENT);
-      printf("DEBUG: got to body parse!\n");
       t_idx++;
       // TODO: parse until DEDENT'd out of block
       parse_expression(tokens, &t_idx);
     } else if (tokens[t_idx].type == T_RETURN) {
-      ;
+      Return *r = malloc(sizeof(Return));
+      t_idx++;
+      r->value = parse_expression(tokens, &t_idx);
+      Node *ret_node = malloc(sizeof(Node));
+      ret_node->type = RETURN;
+      ret_node->data.ret = r;
+      result->nodes[n_idx++] = ret_node;
+      break;
     } else if (tokens[t_idx].type == T_IF) {
       ;
     } else if (tokens[t_idx].type == T_ELSE) {
       ;
     } else if (tokens[t_idx].type == T_NAME && tokens[t_idx+1].type == T_ASSIGN) {
       // assignment
-      ;
+      Assign *ass = malloc(sizeof(Assign));
+      Name *name = malloc(sizeof(Name));
+      name->id = tokens[t_idx].lexeme;
+      ass->target = name;
+      t_idx += 2;
+      ass->value = parse_expression(tokens, &t_idx);
+      Node *ass_node = malloc(sizeof(Node));
+      ass_node->type = ASSIGN;
+      ass_node->data.assign = ass;
+      result->nodes[n_idx++] = ass_node; 
     } else {
       result->nodes[n_idx++] = parse_expression(tokens, &t_idx);
     }
@@ -259,17 +276,69 @@ Module *parse(const Token *tokens) {
   return result;
 }
 
+char *space(int n) {
+  char *buf = malloc(n+1);
+  for (int i=0; i<n; i++) {
+    buf[i] = ' ';
+  }
+  buf[n] = '\0';
+  return buf;
+}
+
+// NOTE: first do non-compound nodes
+char *node_format(Node *n, int indent) {
+  char *result = malloc(500); 
+  char *start = result;
+  if (n->type == CONSTANT) {
+    result += sprintf(result, "Constant(value=%d)", n->data.constant->value);
+  } else if (n->type == NAME) {
+    result += sprintf(result, "Name(id='%s')", n->data.name->id);
+  } else if (n->type == BINARYADD) {
+    result += sprintf(
+      result, 
+      "BinOp(\n%sleft=%s,\n%sop=Add,\n%sright=%s\n%s)", 
+      space(indent+2),
+      node_format(n->data.binary_add->left, indent+2), 
+      space(indent+2),
+      space(indent+2),
+      node_format(n->data.binary_add->right, indent+2),
+      space(indent)
+    );
+  } else if (n->type == ASSIGN) {
+    result += sprintf(
+      result,
+      "Assign(\n%starget=Name(id='%s'),\n%svalue=%s\n%s)",
+      space(indent+2),
+      n->data.assign->target->id,
+      space(indent+2),
+      node_format(n->data.assign->value, indent+2),
+      space(indent)
+    );
+  } else if (n->type == RETURN) {
+    result += sprintf(
+      result,
+      "Return(\n%svalue=%s\n%s)",
+      space(indent+2),
+      node_format(n->data.ret->value, indent+2),
+      space(indent)
+    );
+  }
+  return start;
+}
+
 void module_print(Module *m) {
-  printf("module = \n");
-  for (int i=0; (m->nodes[i] != NULL); i++) {
-    printf("%d: %s\n", i, node_type_table[m->nodes[i]->type]);
+  int level = 0;
+  Node *n;
+  for (int i=0; ((n=m->nodes[i])) != NULL; i++) {
+    printf("%s\n", node_format(n, 0));
   }
 }
 
 int main() {
-  /* // DEBUG - tokenize some basic code
-  Token *tokens = tokenize("");
+  // tokenize some basic code
+  Token *tokens = tokenize("a = 1\nfoo = 2 + a\nreturn foo");
   Token t;
+  printf("tokens = \n");
   for (int i=0; ((t = tokens[i]).type) != T_EOF; i++) {
     if (t.lexeme != NULL) {
       printf("%s, %s\n", token_table[t.type], t.lexeme);
@@ -277,19 +346,9 @@ int main() {
       printf("%s\n", token_table[t.type]);
     }
   }
-  */
-
-  // Token *tokens = tokenize("def foo(a, b):\n    a\n");
-  Token *tokens = tokenize("foo + bar\n");
-  Token t;
-  for (int i=0; ((t = tokens[i]).type) != T_EOF; i++) {
-    if (t.lexeme != NULL) {
-      printf("%s, %s\n", token_table[t.type], t.lexeme);
-    } else {
-      printf("%s\n", token_table[t.type]);
-    }
-  }
+  printf("\n");
 
   Module *module = parse(tokens);
+  printf("module = \n");
   module_print(module);
 }
