@@ -152,7 +152,8 @@ typedef struct FunctionDef {
 
 typedef struct CallFunction {
   Name *func;
-  struct Node **args;
+  struct Node *args;
+  int argc;
 } CallFunction;
 
 typedef struct Expr { // NOTE: pure expressions e.g. `3 + 4`

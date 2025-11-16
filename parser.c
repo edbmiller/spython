@@ -146,7 +146,8 @@ static const char *SYNTAX_ERROR_MESSAGE = "SyntaxError: invalid syntax\n";
 
 void assert_token_type_equals(TokenType a, TokenType b, const char *error) {
   if (a != b) {
-    printf("%s", error);
+    printf("%s", SYNTAX_ERROR_MESSAGE);
+    printf("expected %s parsing %s\n", token_table[a], token_table[b]);
     exit(1);
   }
 }
@@ -163,13 +164,23 @@ void expect_in(TokenType r, TokenType group[], int group_length) {
   }
 
   printf("%s", SYNTAX_ERROR_MESSAGE);
+  printf("expected group parsing %s\n", token_table[r]);
   exit(1);
+}
+
+int is_in(TokenType r, TokenType group[], int group_length) {
+  for (int i=0; i<group_length; i++) {
+    if (r == group[i]) {
+      return 0;
+    }
+  }
+  return 1;
 }
 
 Node *parse_expression(const Token *tokens, int *t_idx) {
   // every expression is OPERAND -> OPERATOR -> OPERAND -> OPERATOR -> OPERAND -> ...
   // ending in an OPERAND - no parentheses except in function calls
-  // NOTE: support names, literals and binary operators - NOT functions yet!
+  // NOTE: support names, literals and binary operators and functions
   Node *result = malloc(sizeof(Node));
   TokenType operand_token_group[2] = { T_INT, T_NAME };
   TokenType operator_token_group[2] = { T_PLUS, T_MINUS };
@@ -187,26 +198,65 @@ Node *parse_expression(const Token *tokens, int *t_idx) {
     n->id = tokens[*t_idx].lexeme;
     left_node->type = NAME;
     left_node->data.name = n;
+    if (tokens[*t_idx+1].type == T_LPAREN) {
+      // NOTE: assume all args are names or ints
+      *t_idx += 2;
+      CallFunction *call = malloc(sizeof(CallFunction));
+      call->func = n;
+      int arg_idx = 0;
+      // TODO!: figure out what we're actually doing with
+      // this node array... lol
+      call->args = malloc(5 * sizeof(Node));
+      // TODO: dealloc left_node
+      while (tokens[*t_idx].type != T_RPAREN) {
+        Node arg_node;
+        if (tokens[*t_idx].type == T_INT) {
+          Constant *c = malloc(sizeof(Constant)); 
+          c->value = atoi(tokens[*t_idx].lexeme);
+          arg_node.type = CONSTANT;
+          arg_node.data.constant = c;
+        } else if (tokens[*t_idx].type == T_NAME) {
+          Name *n = malloc(sizeof(Name));
+          n->id = tokens[*t_idx].lexeme;
+          arg_node.type = NAME;
+          arg_node.data.name = n;
+        }
+        if (tokens[*t_idx].type != T_COMMA) {
+          // put arg in the slot
+          call->args[arg_idx] = arg_node;
+          // printf("%s\n", node_type_table[call->args->type]);
+          arg_idx++;
+        }
+        *t_idx += 1; // push past comma to next arg or )
+      }
+      call->argc = arg_idx;
+      Node *call_node = malloc(sizeof(Node));
+      call_node->type = CALLFUNCTION;
+      call_node->data.call_function = call;
+      left_node = call_node;
+    }
   }
-  if (tokens[++(*t_idx)].type == T_NEWLINE) {
-    (*t_idx)++;
+  if (tokens[*t_idx+1].type == T_NEWLINE) {
+    *t_idx += 2;
     return left_node;
-  } else if (tokens[*t_idx].type == T_EOF) {
+  } else if (tokens[*t_idx+1].type == T_EOF) {
+    *t_idx += 1;
     return left_node;
   } else {
-    expect_in(tokens[*t_idx].type, operator_token_group, 2);
-    expect(tokens[*t_idx].type, T_PLUS); // TODO: support other ops
-    BinaryAdd *b = malloc(sizeof(BinaryAdd)); 
-    b->left = left_node;
-    // bump past operator and parse rest of expression 
-    (*t_idx)++;
-    b->right = parse_expression(tokens, t_idx);
-    // now malloc result node and return
-    Node *binary_add_node = malloc(sizeof(Node));
-    binary_add_node->type = BINARYADD;
-    binary_add_node->data.binary_add = b;
-    // (*t_idx)++; // damn this has already happened when he hit the newline
-    return binary_add_node;
+    (*t_idx)++; // bump forward to next token:
+    if (is_in(tokens[*t_idx].type, operator_token_group, 2) == 0) {
+      expect(tokens[*t_idx].type, T_PLUS); // TODO: support other ops
+      BinaryAdd *b = malloc(sizeof(BinaryAdd)); 
+      b->left = left_node;
+      // bump past operator and parse rest of expression 
+      (*t_idx)++;
+      b->right = parse_expression(tokens, t_idx);
+      // now malloc result node and return
+      Node *binary_add_node = malloc(sizeof(Node));
+      binary_add_node->type = BINARYADD;
+      binary_add_node->data.binary_add = b;
+      return binary_add_node;
+    }
   }
 }
 
@@ -322,6 +372,22 @@ char *node_format(Node *n, int indent) {
       node_format(n->data.ret->value, indent+2),
       space(indent)
     );
+  } else if (n->type == CALLFUNCTION) {
+    result += sprintf(
+      result,
+      "Call(\n%sfunc=Name(id='%s'),\n%sargs=[\n",
+      space(indent+2),
+      n->data.call_function->func->id,
+      space(indent+2)
+    );
+    for (int i=0; i<n->data.call_function->argc; i++) {
+      result += sprintf(result, 
+        "%s%s,\n", 
+        space(indent+4), 
+        node_format(n->data.call_function->args+i, indent+2)
+      );
+    }
+    result += sprintf(result, "%s]\n%s)", space(indent+2), space(indent));
   }
   return start;
 }
@@ -336,7 +402,7 @@ void module_print(Module *m) {
 
 int main() {
   // tokenize some basic code
-  Token *tokens = tokenize("a = 1\nfoo = 2 + a\nreturn foo");
+  Token *tokens = tokenize("foo(3, bar) + 3 + bar + foo(5)");
   Token t;
   printf("tokens = \n");
   for (int i=0; ((t = tokens[i]).type) != T_EOF; i++) {
