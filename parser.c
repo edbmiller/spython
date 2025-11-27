@@ -147,7 +147,7 @@ static const char *SYNTAX_ERROR_MESSAGE = "SyntaxError: invalid syntax\n";
 void assert_token_type_equals(TokenType a, TokenType b, const char *error) {
   if (a != b) {
     printf("%s", SYNTAX_ERROR_MESSAGE);
-    printf("expected %s parsing %s\n", token_table[a], token_table[b]);
+    printf("expected %s parsing %s\n", token_table[b], token_table[a]);
     exit(1);
   }
 }
@@ -181,6 +181,7 @@ Node *parse_expression(const Token *tokens, int *t_idx) {
   // every expression is OPERAND -> OPERATOR -> OPERAND -> OPERATOR -> OPERAND -> ...
   // ending in an OPERAND - no parentheses except in function calls
   // NOTE: support names, literals and binary operators and functions
+  printf("parsing beginning with %d, %s\n", *t_idx, token_table[tokens[*t_idx].type]);
   Node *result = malloc(sizeof(Node));
   TokenType operand_token_group[2] = { T_INT, T_NAME };
   TokenType operator_token_group[2] = { T_PLUS, T_MINUS };
@@ -201,39 +202,36 @@ Node *parse_expression(const Token *tokens, int *t_idx) {
     if (tokens[*t_idx+1].type == T_LPAREN) {
       // NOTE: assume all args are names or ints
       *t_idx += 2;
+      printf("allocating CallFunction\n");
       CallFunction *call = malloc(sizeof(CallFunction));
       call->func = n;
       int arg_idx = 0;
-      // TODO!: figure out what we're actually doing with
-      // this node array... lol
+      // TODO: figure out what we're actually doing with
+      // this node array...
       call->args = malloc(5 * sizeof(Node));
-      // TODO: dealloc left_node
       while (tokens[*t_idx].type != T_RPAREN) {
-        Node arg_node;
-        if (tokens[*t_idx].type == T_INT) {
-          Constant *c = malloc(sizeof(Constant)); 
-          c->value = atoi(tokens[*t_idx].lexeme);
-          arg_node.type = CONSTANT;
-          arg_node.data.constant = c;
-        } else if (tokens[*t_idx].type == T_NAME) {
-          Name *n = malloc(sizeof(Name));
-          n->id = tokens[*t_idx].lexeme;
-          arg_node.type = NAME;
-          arg_node.data.name = n;
+        Node *arg_node = parse_expression(tokens, t_idx);
+        printf("arg_node type: %d, token idx: %d\n", arg_node->type, *t_idx);
+        // put arg in the slot
+        call->args[arg_idx] = *arg_node;
+        // printf("%s\n", node_type_table[call->args->type]);
+        arg_idx++;
+        if (tokens[*t_idx].type == T_COMMA) {
+          *t_idx += 1; // push past comma to next arg or )
+        } else if (tokens[*t_idx].type == T_RPAREN) {
+          break;
+        } else {
+          printf("%s", SYNTAX_ERROR_MESSAGE);
+          exit(1);
         }
-        if (tokens[*t_idx].type != T_COMMA) {
-          // put arg in the slot
-          call->args[arg_idx] = arg_node;
-          // printf("%s\n", node_type_table[call->args->type]);
-          arg_idx++;
-        }
-        *t_idx += 1; // push past comma to next arg or )
       }
       call->argc = arg_idx;
       Node *call_node = malloc(sizeof(Node));
       call_node->type = CALLFUNCTION;
       call_node->data.call_function = call;
+      // TODO: dealloc the old left node
       left_node = call_node;
+      printf("finished call_node, now at %d: %s\n", *t_idx, token_table[tokens[*t_idx].type]);
     }
   }
   if (tokens[*t_idx+1].type == T_NEWLINE) {
@@ -243,6 +241,7 @@ Node *parse_expression(const Token *tokens, int *t_idx) {
     *t_idx += 1;
     return left_node;
   } else {
+    printf("here...\n");
     (*t_idx)++; // bump forward to next token:
     if (is_in(tokens[*t_idx].type, operator_token_group, 2) == 0) {
       expect(tokens[*t_idx].type, T_PLUS); // TODO: support other ops
@@ -256,6 +255,9 @@ Node *parse_expression(const Token *tokens, int *t_idx) {
       binary_add_node->type = BINARYADD;
       binary_add_node->data.binary_add = b;
       return binary_add_node;
+    } else {
+      // TODO: make this not a fuckery...
+      return left_node;
     }
   }
 }
@@ -287,6 +289,7 @@ Module *parse(const Token *tokens) {
         strcpy(f->args[a_idx], tokens[t_idx].lexeme);
         a_idx++;
       }
+      printf("here3\n");
       expect(tokens[t_idx].type, T_RPAREN);
       expect(tokens[++t_idx].type, T_COLON);
       expect(tokens[++t_idx].type, T_NEWLINE);
@@ -384,10 +387,12 @@ char *node_format(Node *n, int indent) {
       result += sprintf(result, 
         "%s%s,\n", 
         space(indent+4), 
-        node_format(n->data.call_function->args+i, indent+2)
+        node_format(n->data.call_function->args+i, indent+4)
       );
     }
     result += sprintf(result, "%s]\n%s)", space(indent+2), space(indent));
+  } else {
+    result += sprintf(result, "%d", n->type);
   }
   return start;
 }
@@ -402,7 +407,7 @@ void module_print(Module *m) {
 
 int main() {
   // tokenize some basic code
-  Token *tokens = tokenize("foo(3, bar) + 3 + bar + foo(5)");
+  Token *tokens = tokenize("x = foo(bar(baz(1), 2), 3) + 4");
   Token t;
   printf("tokens = \n");
   for (int i=0; ((t = tokens[i]).type) != T_EOF; i++) {
