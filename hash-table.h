@@ -28,7 +28,7 @@ typedef struct PyBoolObject {
 typedef struct PyTupleObject {
   PyType type;
   int size;
-  PyObject **elements; // TODO: allocate line with the [] trick
+  PyObject **elements; // TODO: allocate inline with the [] trick
 } PyTupleObject; 
 
 typedef struct PyCodeObject {

@@ -439,9 +439,153 @@ void module_print(Module *m) {
   }
 }
 
+void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx) {
+  // post-order traverse AST and emit bytecode to output
+  // buffer according to the current offset
+  // first: allocate string
+  switch (node->type) {
+    case CONSTANT:
+      PyIntObject *constant = malloc(sizeof(PyIntObject));
+      constant->type = PY_INT;
+      constant->value = node->data.constant->value;
+      consts[*c_idx] = (PyObject *) constant;
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "LOAD_CONST,%d", *c_idx);
+      *b_idx += 1;
+      *c_idx += 1;
+      break;
+    case NAME:
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "LOAD_NAME,'%s'", node->data.name->id);
+      *b_idx += 1;
+      break;
+    case BINARYADD:
+      walk(node->data.binary_add->left, bytecode, b_idx, consts, c_idx);
+      walk(node->data.binary_add->right, bytecode, b_idx, consts, c_idx);
+      bytecode[*b_idx] = "ADD";
+      *b_idx += 1;
+      break;
+    case ASSIGN:
+      walk(node->data.assign->value, bytecode, b_idx, consts, c_idx);
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "STORE_NAME,'%s'", node->data.assign->target->id);
+      *b_idx += 1;
+      break;
+    case FUNCTIONDEF:
+      // 1. build PyCodeObject
+      PyCodeObject *code = module_walk(node->data.function_def->body);
+      code->argnames = node->data.function_def->args;
+
+      // 2. save it to consts and emit a LOAD_CONST
+      consts[*c_idx] = (PyObject *) code;
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "LOAD_CONST,%d", *c_idx);
+      *c_idx += 1;
+      *b_idx += 1;
+
+      // 3. emit MAKE_FUNCTION and STORE_NAME
+      bytecode[*b_idx] = "MAKE_FUNCTION";
+      *b_idx += 1;
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "STORE_NAME,'%s'", node->data.function_def->name);
+      *b_idx += 1;
+      break;
+    case RETURN:
+      walk(node->data.ret->value, bytecode, b_idx, consts, c_idx);
+      bytecode[*b_idx] = "RETURN";
+      *b_idx += 1;
+      break;
+    case CALLFUNCTION:
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "LOAD_NAME,'%s'", node->data.call_function->func->id);
+      *b_idx += 1;
+      // for each argument, emit a LOAD_ opcode
+      int i = 0;
+      while (i < node->data.call_function->argc) {
+        // load the value in this node - either name or const
+        switch (node->data.call_function->args[i].type) {
+          case CONSTANT:
+            PyIntObject *constant = malloc(sizeof(PyIntObject));
+            constant->type = PY_INT;
+            constant->value = node->data.call_function->args[i].data.constant->value;
+            bytecode[*b_idx] = malloc(32);
+            sprintf(bytecode[*b_idx], "LOAD_CONST,%d", *c_idx);
+            *b_idx += 1;
+            *c_idx += 1;
+            break;
+          case NAME:
+            bytecode[*b_idx] = malloc(32);
+            sprintf(bytecode[*b_idx], "LOAD_NAME,'%s'", node->data.call_function->args[i].data.name->id);
+            *b_idx += 1;
+            break;
+        }
+        i++;
+      }
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "CALL_FUNCTION,%d", i);
+      *b_idx += 1;
+      break;
+    case EXPR:
+      // walk the expression then pop the result
+      walk(node->data.expr->value, bytecode, b_idx, consts, c_idx);
+      bytecode[*b_idx] = "POP_TOP";
+      *b_idx += 1;
+      break;
+    case IF:
+      walk(node->data.iff->test, bytecode, b_idx, consts, c_idx);
+      int pop_jump_offset = *b_idx; // patch when we know block sizes
+      *b_idx += 1;
+      for (int j=0; node->data.iff->body->nodes[j] != NULL; j++) {
+        walk(node->data.iff->body->nodes[j], bytecode, b_idx, consts, c_idx);
+      }
+      // printf("DEBUG: walked body\n");
+      if (node->data.iff->orelse != NULL) {
+        // put the extra JUMP after true block and patch POP_JUMP_IF_FALSE
+        int extra_jump_offset = *b_idx;
+        *b_idx += 1;
+        bytecode[pop_jump_offset] = malloc(32);
+        sprintf(bytecode[pop_jump_offset], "POP_JUMP_IF_FALSE,%d", *b_idx);
+        // now walk the orelse
+        for (int j=0; node->data.iff->orelse->nodes[j] != NULL; j++) {
+          walk(node->data.iff->orelse->nodes[j], bytecode, b_idx, consts, c_idx);
+        }
+        // finally patch the jump to skip if we've done the true block
+        bytecode[extra_jump_offset] = malloc(32);
+        sprintf(bytecode[extra_jump_offset], "JUMP,%d", *b_idx);
+      } else {
+        bytecode[pop_jump_offset] = malloc(32);
+        sprintf(bytecode[pop_jump_offset], "POP_JUMP_IF_FALSE,%d", *b_idx);
+        // nb. *b_idx has been incr'd by body walk
+      }
+      break;
+    case COMPARE:
+      walk(node->data.compare->left, bytecode, b_idx, consts, c_idx);
+      walk(node->data.compare->right, bytecode, b_idx, consts, c_idx);
+      bytecode[*b_idx] = malloc(32);
+      sprintf(bytecode[*b_idx], "COMPARE,%d", node->data.compare->comparison);
+      *b_idx += 1;
+      break;
+  }
+}
+
+PyCodeObject *module_walk(Module *module) {
+  PyCodeObject *result = malloc(sizeof(PyCodeObject));
+  result->type = PY_CODE;
+  result->bytecode = malloc(100 * sizeof(char *));
+  result->consts = malloc(10 * sizeof(PyObject *));
+  result->argnames = malloc(5 * sizeof(char *));
+  int *bytecode_offset = malloc(sizeof(int));
+  int *consts_offset = malloc(sizeof(int));
+  for (int i=0; module->nodes[i] != NULL; i++) {
+    walk(module->nodes[i], result->bytecode, bytecode_offset, result->consts, consts_offset);
+  }
+  return result;
+}
+
 int main() {
   // tokenize some basic code
-  Token *tokens = tokenize("def add(x, y):\n    z = x + y\n    return z");
+  // TODO: handle subsequent call
+  Token *tokens = tokenize("def add(x, y):\n    z = x + y\n    return z\nadd(2, 3)");
   Token t;
   printf("tokens = \n");
   for (int i=0; ((t = tokens[i]).type) != T_EOF; i++) {
@@ -456,4 +600,11 @@ int main() {
   Module *module = parse(tokens);
   printf("module = \n");
   module_print(module);
+  printf("\n");
+
+  printf("bytecode = \n");
+  PyCodeObject *code = module_walk(module);
+  for (int i=0; code->bytecode[i] != NULL; i++) {
+    printf("%s\n", code->bytecode[i]);
+  }
 }
