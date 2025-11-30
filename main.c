@@ -226,7 +226,6 @@ char *get_string_operand(const char *input) {
 
 void handle_bytecode(PyState *state, const char *input) {
   // take a bytecode instruction and mutate frame and/or its stack
-  // printf("DEBUG: handling instruction: %s\n", input);
   OpCode opcode = get_opcode(input); 
   char *varname;
   switch (opcode) { 
@@ -454,16 +453,24 @@ int main(int argc, char **argv) {
 
   // -> walk into a total string array of instructions
   char *input = read_file(argv[1]);
-  int *distance = malloc(sizeof(int));
-  Module *module = parse(input, 0, distance);
+  Token *tokens = tokenize(input);
+  print_tokens(tokens);
+
+  int t_idx = 0;
+  Module *module = parse(tokens, &t_idx);
+  printf("ast = \n");
+  module_print(module);
+  printf("\n");
+  
   PyCodeObject *code = module_walk(module);
   state.current_frame->code = code;
 
-  printf("bytecode -------\n");
+  printf("bytecode =\n");
   for (int k=0; code->bytecode[k] != NULL; k++) {
     printf("%d: %s\n", k, code->bytecode[k]);
   }
-  printf("output ---------\n");
+  printf("\n");
+  printf("output = \n");
   // -> interpret the bytecode - handle_bytecode increments program counter
   int i = state.current_frame->bytecode_offset;
   while (state.current_frame->code->bytecode[i] != NULL) {

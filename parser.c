@@ -12,7 +12,7 @@ Token *tokenize(const char *source) {
   char buf[64]; // buffer for lexeme
   int b_idx = 0; // buffer idx
 
-  int i; // character index
+  int i = 0; // character index
   int c; // character being scanned 
   int level = 0; // indentation level
   while ((c = source[i]) != '\0') {
@@ -127,6 +127,7 @@ Token *tokenize(const char *source) {
         // count DEDENTs - note: 0 if no spaces :)
         for (int k=0; k>gap_size/4; k--) {
           tok[t_idx++].type = T_DEDENT;
+          level--;
         } 
       } else {
         printf("IndentationError\n");
@@ -256,72 +257,76 @@ Node *parse_expression(const Token *tokens, int *t_idx) {
   }
 }
 
-Module *parse(const Token *tokens) {
+Module *parse(const Token *tokens, int *t_idx) {
   Module *result = malloc(sizeof(Module));
   int n_idx = 0; // node index
-  int t_idx = 0; // token index
-  while (tokens[t_idx].type != T_EOF) {
-    if (tokens[t_idx].type == T_DEF) {
+  while (tokens[*t_idx].type != T_EOF) {
+    if (tokens[*t_idx].type == T_DEF) {
       FunctionDef *f = malloc(sizeof(FunctionDef));
       // expect name and allocate it
-      expect(tokens[++t_idx].type, T_NAME);
+      expect(tokens[++(*t_idx)].type, T_NAME);
       f->name = malloc(10);
-      strcpy(f->name, tokens[t_idx].lexeme);
+      strcpy(f->name, tokens[*t_idx].lexeme);
       // expect (
-      expect(tokens[++t_idx].type, T_LPAREN); 
+      expect(tokens[++(*t_idx)].type, T_LPAREN); 
       // accumulate argnames
-      expect(tokens[++t_idx].type, T_NAME);
+      expect(tokens[++(*t_idx)].type, T_NAME);
       // do first one
       f->args = malloc(5 * sizeof(char *)); 
       f->args[0] = malloc(10);
-      strcpy(f->args[0], tokens[t_idx].lexeme);
+      strcpy(f->args[0], tokens[*t_idx].lexeme);
       // do rest
       int a_idx = 1;
-      while (tokens[++t_idx].type == T_COMMA) {
-        expect(tokens[++t_idx].type, T_NAME);
+      while (tokens[++(*t_idx)].type == T_COMMA) {
+        expect(tokens[++(*t_idx)].type, T_NAME);
         f->args[a_idx] = malloc(10);
-        strcpy(f->args[a_idx], tokens[t_idx].lexeme);
+        strcpy(f->args[a_idx], tokens[*t_idx].lexeme);
         a_idx++;
       }
-      expect(tokens[t_idx].type, T_RPAREN);
-      expect(tokens[++t_idx].type, T_COLON);
-      expect(tokens[++t_idx].type, T_NEWLINE);
-      expect(tokens[++t_idx].type, T_INDENT);
-      t_idx++;
-      // TODO: parse until DEDENT'd out of block
-      f->body = parse(tokens + t_idx);
+      expect(tokens[*t_idx].type, T_RPAREN);
+      expect(tokens[++(*t_idx)].type, T_COLON);
+      expect(tokens[++(*t_idx)].type, T_NEWLINE);
+      expect(tokens[++(*t_idx)].type, T_INDENT);
+      (*t_idx)++;
+      f->body = parse(tokens, t_idx);
+      if (tokens[*t_idx].type != T_EOF) {
+        expect(tokens[(*t_idx)++].type, T_DEDENT);
+      }
       Node *f_node = malloc(sizeof(Node));
       f_node->type = FUNCTIONDEF;
       f_node->data.function_def = f;
       result->nodes[n_idx++] = f_node;
-      break;
-    } else if (tokens[t_idx].type == T_RETURN) {
+    } else if (tokens[*t_idx].type == T_RETURN) {
       Return *r = malloc(sizeof(Return));
-      t_idx++;
-      r->value = parse_expression(tokens, &t_idx);
+      (*t_idx)++;
+      r->value = parse_expression(tokens, t_idx);
       Node *ret_node = malloc(sizeof(Node));
       ret_node->type = RETURN;
       ret_node->data.ret = r;
       result->nodes[n_idx++] = ret_node;
       break;
-    } else if (tokens[t_idx].type == T_IF) {
+    } else if (tokens[*t_idx].type == T_IF) {
       ;
-    } else if (tokens[t_idx].type == T_ELSE) {
+    } else if (tokens[*t_idx].type == T_ELSE) {
       ;
-    } else if (tokens[t_idx].type == T_NAME && tokens[t_idx+1].type == T_ASSIGN) {
+    } else if (tokens[*t_idx].type == T_NAME && tokens[*t_idx+1].type == T_ASSIGN) {
       // assignment
       Assign *ass = malloc(sizeof(Assign));
       Name *name = malloc(sizeof(Name));
-      name->id = tokens[t_idx].lexeme;
+      name->id = tokens[*t_idx].lexeme;
       ass->target = name;
-      t_idx += 2;
-      ass->value = parse_expression(tokens, &t_idx);
+      *t_idx += 2;
+      ass->value = parse_expression(tokens, t_idx);
       Node *ass_node = malloc(sizeof(Node));
       ass_node->type = ASSIGN;
       ass_node->data.assign = ass;
       result->nodes[n_idx++] = ass_node; 
+    } else if (tokens[*t_idx].type == T_NEWLINE) {
+      // this is a pure newline we see outside of
+      // an expression or terminating a block
+      (*t_idx)++;
     } else {
-      result->nodes[n_idx++] = parse_expression(tokens, &t_idx);
+      result->nodes[n_idx++] = parse_expression(tokens, t_idx);
     }
   }
   return result;
@@ -432,7 +437,6 @@ char *node_format(Node *n, int indent) {
 }
 
 void module_print(Module *m) {
-  int level = 0;
   Node *n;
   for (int i=0; ((n=m->nodes[i])) != NULL; i++) {
     printf("%s\n", node_format(n, 0));
@@ -508,6 +512,7 @@ void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx
             PyIntObject *constant = malloc(sizeof(PyIntObject));
             constant->type = PY_INT;
             constant->value = node->data.call_function->args[i].data.constant->value;
+            consts[*c_idx] = (PyObject *) constant;
             bytecode[*b_idx] = malloc(32);
             sprintf(bytecode[*b_idx], "LOAD_CONST,%d", *c_idx);
             *b_idx += 1;
@@ -582,22 +587,26 @@ PyCodeObject *module_walk(Module *module) {
   return result;
 }
 
-int main() {
-  // tokenize some basic code
-  // TODO: handle subsequent call
-  Token *tokens = tokenize("def add(x, y):\n    z = x + y\n    return z\nadd(2, 3)");
+void print_tokens(Token *tokens) {
   Token t;
   printf("tokens = \n");
   for (int i=0; ((t = tokens[i]).type) != T_EOF; i++) {
     if (t.lexeme != NULL) {
-      printf("%s, %s\n", token_table[t.type], t.lexeme);
+      printf("%d: %s, %s\n", i, token_table[t.type], t.lexeme);
     } else {
-      printf("%s\n", token_table[t.type]);
+      printf("%d: %s\n", i, token_table[t.type]);
     }
   }
   printf("\n");
+}
 
-  Module *module = parse(tokens);
+/*
+int main() {
+  Token *tokens = tokenize("def foo(x):\n    return x\n\n");
+  print_tokens(tokens);
+
+  int t_idx = 0;
+  Module *module = parse(tokens, &t_idx);
   printf("module = \n");
   module_print(module);
   printf("\n");
@@ -608,3 +617,4 @@ int main() {
     printf("%s\n", code->bytecode[i]);
   }
 }
+*/

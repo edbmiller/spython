@@ -194,6 +194,7 @@ typedef struct Module {
 
 void module_print(Module *m);
 PyCodeObject *module_walk(Module *m);
-Module *parse(const Token *tokens); // main entry point
+Module *parse(const Token *tokens, int *t_idx); // main entry point
+void print_tokens(Token *tokens);
 
 #endif
