@@ -506,24 +506,8 @@ void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx
       // for each argument, emit a LOAD_ opcode
       int i = 0;
       while (i < node->data.call_function->argc) {
-        // load the value in this node - either name or const
-        switch (node->data.call_function->args[i].type) {
-          case CONSTANT:
-            PyIntObject *constant = malloc(sizeof(PyIntObject));
-            constant->type = PY_INT;
-            constant->value = node->data.call_function->args[i].data.constant->value;
-            consts[*c_idx] = (PyObject *) constant;
-            bytecode[*b_idx] = malloc(32);
-            sprintf(bytecode[*b_idx], "LOAD_CONST,%d", *c_idx);
-            *b_idx += 1;
-            *c_idx += 1;
-            break;
-          case NAME:
-            bytecode[*b_idx] = malloc(32);
-            sprintf(bytecode[*b_idx], "LOAD_NAME,'%s'", node->data.call_function->args[i].data.name->id);
-            *b_idx += 1;
-            break;
-        }
+        // walk the arg
+        walk(node->data.call_function->args+i, bytecode, b_idx, consts, c_idx);
         i++;
       }
       bytecode[*b_idx] = malloc(32);
@@ -543,7 +527,6 @@ void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx
       for (int j=0; node->data.iff->body->nodes[j] != NULL; j++) {
         walk(node->data.iff->body->nodes[j], bytecode, b_idx, consts, c_idx);
       }
-      // printf("DEBUG: walked body\n");
       if (node->data.iff->orelse != NULL) {
         // put the extra JUMP after true block and patch POP_JUMP_IF_FALSE
         int extra_jump_offset = *b_idx;
@@ -602,8 +585,8 @@ void print_tokens(Token *tokens) {
 
 /*
 int main() {
-  Token *tokens = tokenize("def foo(x):\n    return x\n\n");
-  print_tokens(tokens);
+  Token *tokens = tokenize("def foo(x):\n    return x\nprint(foo(2))");
+  // print_tokens(tokens);
 
   int t_idx = 0;
   Module *module = parse(tokens, &t_idx);
