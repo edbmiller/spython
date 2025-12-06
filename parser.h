@@ -36,6 +36,10 @@ typedef enum {
   T_INDENT,
   T_DEDENT,
   
+  // internal - we use during parsing passes
+  // lexeme is index into a node array
+  T_NODE,
+  
   // end of file
   T_EOF
 } TokenType;
@@ -64,6 +68,7 @@ static char *token_table[24] = {
   "NEWLINE",
   "INDENT",
   "DEDENT",
+  "NODE",
   "EOF"
 };
 

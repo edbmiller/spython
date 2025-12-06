@@ -63,55 +63,70 @@ Token *tokenize(const char *source) {
     } else if (c == ' ') {
       i++;
     } else if (c == '+') { // operators
-      tok[t_idx++].type = T_PLUS;
+      tok[t_idx].type = T_PLUS;
+      tok[t_idx++].lexeme = NULL;
       i++;
     } else if (c == '-') {
       tok[t_idx++].type = T_MINUS;
+      tok[t_idx].lexeme = NULL;
       i++;
     } else if (c == '*') {
-      tok[t_idx++].type = T_MULTIPLY;
+      tok[t_idx].type = T_MULTIPLY;
+      tok[t_idx++].lexeme = NULL;
       i++;
     } else if (c == '/') {
-      tok[t_idx++].type = T_DIVIDE;
+      tok[t_idx].type = T_DIVIDE;
+      tok[t_idx++].lexeme = NULL;
       i++;
     } else if (c == '=') {
       if (source[i+1] == '=') {
-        tok[t_idx++].type = T_EQ;
+        tok[t_idx].type = T_EQ;
+        tok[t_idx++].lexeme = NULL;
         i += 2;
       } else {
-        tok[t_idx++].type = T_ASSIGN;
+        tok[t_idx].type = T_ASSIGN;
+        tok[t_idx++].lexeme = NULL;
         i += 1;
       }
     } else if (c == '>') {
       if (source[i+1] == '=') {
-        tok[t_idx++].type = T_GEQ;
+        tok[t_idx].type = T_GEQ;
+        tok[t_idx++].lexeme = NULL;
         i += 2;
       } else {
-        tok[t_idx++].type = T_GT;
+        tok[t_idx].type = T_GT;
+        tok[t_idx++].lexeme = NULL;
         i += 1;
       }
     } else if (c == '<') {
       if (source[i+1] == '=') {
-        tok[t_idx++].type = T_LEQ;
+        tok[t_idx].type = T_LEQ;
+        tok[t_idx++].lexeme = NULL;
         i += 2;
       } else {
-        tok[t_idx++].type = T_LT;
+        tok[t_idx].type = T_LT;
+        tok[t_idx++].lexeme = NULL;
         i += 1;
       }
     } else if (c == '(') { // punctuation + grouping
-      tok[t_idx++].type = T_LPAREN;
+      tok[t_idx].type = T_LPAREN;
+      tok[t_idx++].lexeme = NULL;
       i++;
     } else if (c == ')') {
-      tok[t_idx++].type = T_RPAREN;
+      tok[t_idx].type = T_RPAREN;
+      tok[t_idx++].lexeme = NULL;
       i++;
     } else if (c == ',') {
-      tok[t_idx++].type = T_COMMA;
+      tok[t_idx].type = T_COMMA;
+      tok[t_idx++].lexeme = NULL;
       i++;
     } else if (c == ':') {
-      tok[t_idx++].type = T_COLON;
+      tok[t_idx].type = T_COLON;
+      tok[t_idx++].lexeme = NULL;
       i++;
     } else if (c == '\n') {
-      tok[t_idx++].type = T_NEWLINE;
+      tok[t_idx].type = T_NEWLINE;
+      tok[t_idx++].lexeme = NULL;
       i++;
       // count leading spaces + check indentation
       int num_leading_spaces = 0;
@@ -121,12 +136,14 @@ Token *tokenize(const char *source) {
         i++;
       }
       if (num_leading_spaces == (level + 1) * 4) {
-        tok[t_idx++].type = T_INDENT;
+        tok[t_idx].type = T_INDENT;
+        tok[t_idx++].lexeme = NULL,
         level++;
       } else if ((gap_size = (num_leading_spaces - (level * 4))) % 4 == 0) {
         // count DEDENTs - note: 0 if no spaces :)
         for (int k=0; k>gap_size/4; k--) {
-          tok[t_idx++].type = T_DEDENT;
+          tok[t_idx].type = T_DEDENT;
+          tok[t_idx++].lexeme = NULL;
           level--;
         } 
       } else {
@@ -140,6 +157,7 @@ Token *tokenize(const char *source) {
   }
  
   tok[t_idx].type = T_EOF;
+  tok[t_idx].lexeme = NULL;
   return tok;
 }
 
@@ -178,19 +196,17 @@ int is_in(TokenType r, TokenType group[], int group_length) {
   return 1;
 }
 
-Node *parse_expression(const Token *tokens, int *t_idx) {
-  // every expression is OPERAND -> OPERATOR -> OPERAND -> OPERATOR -> OPERAND -> ...
-  // ending in an OPERAND - no parentheses except in function calls
-  // NOTE: support names, literals and binary operators and functions
+Node *parse_flat_expression(const Token *tokens, int *t_idx, const Node *nodes) {
+  // parse rest left-to-right
   Node *result = malloc(sizeof(Node));
-  TokenType operand_token_group[2] = { T_INT, T_NAME };
+  TokenType operand_token_group[3] = { T_INT, T_NAME, T_NODE };
   TokenType operator_token_group[2] = { T_PLUS, T_MINUS };
 
   // start expecting stuff
-  expect_in(tokens[*t_idx].type, operand_token_group, 2);
+  expect_in(tokens[*t_idx].type, operand_token_group, 3);
   Node *left_node = malloc(sizeof(Node));
   if (tokens[*t_idx].type == T_INT) {
-    Constant *c = malloc(sizeof(Constant)); 
+    Constant *c = malloc(sizeof(Constant));
     c->value = atoi(tokens[*t_idx].lexeme);
     left_node->type = CONSTANT;
     left_node->data.constant = c;
@@ -199,37 +215,11 @@ Node *parse_expression(const Token *tokens, int *t_idx) {
     n->id = tokens[*t_idx].lexeme;
     left_node->type = NAME;
     left_node->data.name = n;
-    if (tokens[*t_idx+1].type == T_LPAREN) {
-      // NOTE: assume all args are names or ints
-      *t_idx += 2;
-      CallFunction *call = malloc(sizeof(CallFunction));
-      call->func = n;
-      int arg_idx = 0;
-      // TODO: figure out what we're actually doing with
-      // this node array...
-      call->args = malloc(5 * sizeof(Node));
-      while (tokens[*t_idx].type != T_RPAREN) {
-        Node *arg_node = parse_expression(tokens, t_idx);
-        // put arg in the slot
-        call->args[arg_idx] = *arg_node;
-        arg_idx++;
-        if (tokens[*t_idx].type == T_COMMA) {
-          *t_idx += 1; // push past comma to next arg or )
-        } else if (tokens[*t_idx].type == T_RPAREN) {
-          break;
-        } else {
-          printf("%s", SYNTAX_ERROR_MESSAGE);
-          exit(1);
-        }
-      }
-      call->argc = arg_idx;
-      Node *call_node = malloc(sizeof(Node));
-      call_node->type = CALLFUNCTION;
-      call_node->data.call_function = call;
-      // TODO: dealloc the old left node
-      left_node = call_node;
-    }
+  } else if (tokens[*t_idx].type == T_NODE) {
+    int node_idx = atoi(tokens[*t_idx].lexeme);
+    left_node = &nodes[node_idx];
   }
+  
   if (tokens[*t_idx+1].type == T_NEWLINE) {
     *t_idx += 2;
     return left_node;
@@ -237,14 +227,14 @@ Node *parse_expression(const Token *tokens, int *t_idx) {
     *t_idx += 1;
     return left_node;
   } else {
-    (*t_idx)++; // bump forward to next token:
+    (*t_idx)++; // bump forward to next token
     if (is_in(tokens[*t_idx].type, operator_token_group, 2) == 0) {
-      expect(tokens[*t_idx].type, T_PLUS); // TODO: support other ops
+      expect(tokens[*t_idx].type, T_PLUS);
       BinaryAdd *b = malloc(sizeof(BinaryAdd)); 
       b->left = left_node;
       // bump past operator and parse rest of expression 
       (*t_idx)++;
-      b->right = parse_expression(tokens, t_idx);
+      b->right = parse_flat_expression(tokens, t_idx, nodes);
       // now malloc result node and return
       Node *binary_add_node = malloc(sizeof(Node));
       binary_add_node->type = BINARYADD;
@@ -255,6 +245,84 @@ Node *parse_expression(const Token *tokens, int *t_idx) {
       return left_node;
     }
   }
+}
+
+Node *parse_expression(const Token *tokens, int *t_idx) {
+  // build nodes as we go and replace sub-expressions
+  // with T_NODE,<idx> as we do them
+  Node *nodes = malloc(10 * sizeof(Node));
+  int n_idx = 0;
+
+  // get length
+  int length = 0;
+  while (tokens[length].type != T_EOF) {
+    length++;
+  }
+ 
+  // TODO: subsequent passes with lower precedence operators
+  // first pass: function calls
+  Token *new_tokens = malloc((length+1) * sizeof(Token));
+  int new_t_idx = 0;
+  while (tokens[*t_idx].type != T_EOF && tokens[*t_idx].type != T_COMMA && tokens[*t_idx].type != T_RPAREN) {
+    if (tokens[*t_idx].type == T_NAME && tokens[*t_idx+1].type == T_LPAREN) {
+      // allocate func name
+      Name *n = malloc(sizeof(Name));
+      n->id = tokens[*t_idx].lexeme;
+
+      // allocate call 
+      CallFunction *call = malloc(sizeof(CallFunction));
+      call->func = n;
+
+      // move fwd + allocate args
+      *t_idx += 2;
+      int arg_idx = 0;
+      call->args = malloc(5 * sizeof(Node));
+      while (tokens[*t_idx].type != T_RPAREN) {
+        // TODO: perhaps return Node, not Node* ???
+        Node *arg_node = parse_expression(tokens, t_idx);
+        call->args[arg_idx] = *arg_node;
+        arg_idx++;
+        if (tokens[*t_idx].type == T_COMMA) {
+          (*t_idx)++;
+        } else if (tokens[*t_idx].type == T_RPAREN) {
+          (*t_idx)++;
+          break;
+        } else {
+          printf("%s", SYNTAX_ERROR_MESSAGE);
+          printf("\nbad func\n");
+          exit(1);
+        }
+      }
+      call->argc = arg_idx;
+      Node *call_node = malloc(sizeof(Node));
+      call_node->type = CALLFUNCTION;
+      call_node->data.call_function = call;
+
+      // now we've allocated the function call node
+      // => insert into node array and emit T_NODE
+      nodes[n_idx] = *call_node;
+
+      // build new T_NODE token
+      Token new_token;
+      new_token.type = T_NODE;
+      new_token.lexeme = malloc(12);
+      sprintf(new_token.lexeme, "%d", n_idx++);
+      // printf("new token lexeme: %s\n", new_token.lexeme);
+      // printf("references node of type %s", node_type_table[nodes[n_idx-1].type]);
+
+      // emit it
+      new_tokens[new_t_idx++] = new_token;
+    } else {
+      // otherwise just emit the same token
+      new_tokens[new_t_idx++] = tokens[(*t_idx)++];
+    }
+  }
+
+  // finally terminate with T_EOF by hand
+  new_tokens[new_t_idx].type = T_EOF;
+  new_t_idx = 0;
+  Node *result = parse_flat_expression(new_tokens, &new_t_idx, nodes);
+  return result;
 }
 
 Module *parse(const Token *tokens, int *t_idx) {
@@ -306,7 +374,8 @@ Module *parse(const Token *tokens, int *t_idx) {
       result->nodes[n_idx++] = ret_node;
       break;
     } else if (tokens[*t_idx].type == T_IF) {
-      ;
+      // Node *test_node = parse_expression(...)
+      ; 
     } else if (tokens[*t_idx].type == T_ELSE) {
       ;
     } else if (tokens[*t_idx].type == T_NAME && tokens[*t_idx+1].type == T_ASSIGN) {
@@ -441,6 +510,7 @@ void module_print(Module *m) {
   for (int i=0; ((n=m->nodes[i])) != NULL; i++) {
     printf("%s\n", node_format(n, 0));
   }
+  printf("\n");
 }
 
 void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx) {
@@ -583,16 +653,14 @@ void print_tokens(Token *tokens) {
   printf("\n");
 }
 
-/*
 int main() {
-  Token *tokens = tokenize("def foo(x):\n    return x\nprint(foo(2))");
-  // print_tokens(tokens);
+  Token *tokens = tokenize("2 + foo(3, foo(3))");
+  print_tokens(tokens);
 
   int t_idx = 0;
   Module *module = parse(tokens, &t_idx);
   printf("module = \n");
   module_print(module);
-  printf("\n");
 
   printf("bytecode = \n");
   PyCodeObject *code = module_walk(module);
@@ -600,4 +668,3 @@ int main() {
     printf("%s\n", code->bytecode[i]);
   }
 }
-*/
