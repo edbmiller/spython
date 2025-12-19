@@ -44,7 +44,7 @@ typedef enum {
   T_EOF
 } TokenType;
 
-static char *token_table[24] = {
+static char *token_table[25] = {
   "INT",
   "NAME",
   "DEF",
@@ -99,7 +99,7 @@ Token *tokenize(const char *source);
 typedef enum NodeType {
   CONSTANT,
   NAME,
-  BINARYADD,
+  BINARYOP,
   ASSIGN,
   FUNCTIONDEF,
   RETURN,
@@ -109,23 +109,42 @@ typedef enum NodeType {
   COMPARE
 } NodeType;
 
-static char *node_type_table[9] = {
+static char *node_type_table[10] = {
   "CONSTANT",
   "NAME",
-  "BINARYADD",
+  "BINARYOP",
   "ASSIGN",
   "FUNCTIONDEF",
   "RETURN",
   "CALLFUNCTION",
   "EXPR",
-  "IF"
+  "IF",
+  "COMPARE"
 };
 
 typedef enum {
-  EQUALS = 0,
-  GREATER_THAN,
-  LESS_THAN
-} Comparison;
+  ADD = 0,
+  SUB,
+  MULT,
+  DIV,
+  EQ,
+  LT,
+  GT,
+  LTE,
+  GTE
+} BinOp;
+
+static char *bin_op_table[9] = {
+  "Add",
+  "Sub",
+  "Mult",
+  "Div",
+  "Eq",
+  "Lt",
+  "Gt",
+  "LtE",
+  "GtE"
+};
 
 typedef struct Constant {
   int value; // TODO: pointer
@@ -135,10 +154,11 @@ typedef struct Name {
   char *id;
 } Name;
 
-typedef struct BinaryAdd {
+typedef struct BinaryOp {
   struct Node *left;
   struct Node *right;
-} BinaryAdd;
+  BinOp op; 
+} BinaryOp;
 
 typedef struct Assign {
   Name *target;
@@ -182,7 +202,7 @@ typedef struct Node {
   union {
     Constant *constant;
     Name *name;
-    BinaryAdd *binary_add;
+    BinaryOp *binary_op;
     Assign *assign;
     FunctionDef *function_def;
     Return *ret;
@@ -199,6 +219,7 @@ typedef struct Module {
 
 void module_print(Module *m);
 PyCodeObject *module_walk(Module *m);
+Node *parse_expression(const Token *tokens, int *t_idx);
 Module *parse(const Token *tokens, int *t_idx); // main entry point
 void print_tokens(Token *tokens);
 

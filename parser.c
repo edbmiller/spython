@@ -187,6 +187,7 @@ void expect_in(TokenType r, TokenType group[], int group_length) {
   exit(1);
 }
 
+// NOTE: broken
 int is_in(TokenType r, TokenType group[], int group_length) {
   for (int i=0; i<group_length; i++) {
     if (r == group[i]) {
@@ -197,13 +198,24 @@ int is_in(TokenType r, TokenType group[], int group_length) {
 }
 
 Node *parse_flat_expression(const Token *tokens, int *t_idx, const Node *nodes) {
-  // parse rest left-to-right
   Node *result = malloc(sizeof(Node));
   TokenType operand_token_group[3] = { T_INT, T_NAME, T_NODE };
-  TokenType operator_token_group[2] = { T_PLUS, T_MINUS };
+  TokenType operator_token_group[4] = {
+    T_PLUS, 
+    T_MINUS, 
+    T_MULTIPLY, 
+    T_DIVIDE,
+    T_EQ,
+    T_LT,
+    T_GT,
+    T_LEQ,
+    T_GEQ,
+  };
 
-  // start expecting stuff
+  // iterate: take first two operands, compute, and repeat
   expect_in(tokens[*t_idx].type, operand_token_group, 3);
+
+  // allocate first operand node
   Node *left_node = malloc(sizeof(Node));
   if (tokens[*t_idx].type == T_INT) {
     Constant *c = malloc(sizeof(Constant));
@@ -219,50 +231,78 @@ Node *parse_flat_expression(const Token *tokens, int *t_idx, const Node *nodes) 
     int node_idx = atoi(tokens[*t_idx].lexeme);
     left_node = &nodes[node_idx];
   }
-  
-  if (tokens[*t_idx+1].type == T_NEWLINE) {
-    *t_idx += 2;
-    return left_node;
-  } else if (tokens[*t_idx+1].type == T_EOF) {
-    *t_idx += 1;
-    return left_node;
-  } else {
-    (*t_idx)++; // bump forward to next token
-    if (is_in(tokens[*t_idx].type, operator_token_group, 2) == 0) {
-      expect(tokens[*t_idx].type, T_PLUS);
-      BinaryAdd *b = malloc(sizeof(BinaryAdd)); 
-      b->left = left_node;
-      // bump past operator and parse rest of expression 
-      (*t_idx)++;
-      b->right = parse_flat_expression(tokens, t_idx, nodes);
-      // now malloc result node and return
-      Node *binary_add_node = malloc(sizeof(Node));
-      binary_add_node->type = BINARYADD;
-      binary_add_node->data.binary_add = b;
-      return binary_add_node;
-    } else {
-      // TODO: make this not a fuckery...
+
+  while (1) {
+    // if we're done, return it
+    if (tokens[*t_idx+1].type == T_NEWLINE) {
+      *t_idx += 2;
       return left_node;
+    } else if (tokens[*t_idx+1].type == T_EOF) {
+      *t_idx += 1;
+      return left_node;
+    } else {
+      // otherwise combine and continue with this as left_node - 
+      // expect an operator and operand, and allocate the bin-op node
+      expect_in(tokens[*t_idx+1].type, operator_token_group, 4);
+      BinaryOp *binary_op = malloc(sizeof(BinaryOp));
+      if (tokens[*t_idx+1].type == T_PLUS) {
+        binary_op->op = ADD;
+      } else if (tokens[*t_idx+1].type == T_MINUS) {
+        binary_op->op = SUB;
+      } else if (tokens[*t_idx+1].type == T_MULTIPLY) {
+        binary_op->op = MULT;
+      } else if (tokens[*t_idx+1].type == T_DIVIDE) {
+        binary_op->op = SUB;
+      } // TODO: EQ, LT, GT, LEQ, GEQ
+
+      // move to operand
+      (*t_idx) += 2;
+      Node *right_node = malloc(sizeof(Node));
+      if (tokens[*t_idx].type == T_INT) {
+        Constant *c = malloc(sizeof(Constant));
+        c->value = atoi(tokens[*t_idx].lexeme);
+        right_node->type = CONSTANT;
+        right_node->data.constant = c;
+      } else if (tokens[*t_idx].type == T_NAME) {
+        Name *n = malloc(sizeof(Name));
+        n->id = tokens[*t_idx].lexeme;
+        right_node->type = NAME;
+        right_node->data.name = n;
+      } else if (tokens[*t_idx].type == T_NODE) {
+        int node_idx = atoi(tokens[*t_idx].lexeme);
+        right_node = &nodes[node_idx];
+      }
+
+      binary_op->left = left_node;
+      binary_op->right = right_node;
+      Node *bin_op_node = malloc(sizeof(Node));
+      bin_op_node->data.binary_op = binary_op;
+      bin_op_node->type = BINARYOP;
+
+      // now replace left_node
+      left_node = bin_op_node;
     }
   }
 }
 
-Node *parse_expression(const Token *tokens, int *t_idx) {
-  // build nodes as we go and replace sub-expressions
-  // with T_NODE,<idx> as we do them
-  Node *nodes = malloc(10 * sizeof(Node));
-  int n_idx = 0;
+typedef struct {
+  Token *tokens;
+  Node  *nodes;
+  int    node_count;
+} ParseResult;
 
-  // get length
+ParseResult handle_functions(Token *tokens, int *t_idx) {
+
   int length = 0;
-  while (tokens[length].type != T_EOF) {
-    length++;
-  }
- 
-  // TODO: subsequent passes with lower precedence operators
-  // first pass: function calls
-  Token *new_tokens = malloc((length+1) * sizeof(Token));
-  int new_t_idx = 0;
+  while (tokens[length].type != T_EOF) length++;
+
+  Token *out_tokens = malloc((length + 1) * sizeof(Token));
+  Node  *out_nodes  = malloc(10 * sizeof(Node));
+
+  int out_t_idx = 0;
+  int out_n_idx = 0;
+
+  // TODO: think about terminate condition
   while (tokens[*t_idx].type != T_EOF && tokens[*t_idx].type != T_COMMA && tokens[*t_idx].type != T_RPAREN) {
     if (tokens[*t_idx].type == T_NAME && tokens[*t_idx+1].type == T_LPAREN) {
       // allocate func name
@@ -300,29 +340,276 @@ Node *parse_expression(const Token *tokens, int *t_idx) {
 
       // now we've allocated the function call node
       // => insert into node array and emit T_NODE
-      nodes[n_idx] = *call_node;
+      out_nodes[out_n_idx] = *call_node;
 
       // build new T_NODE token
       Token new_token;
       new_token.type = T_NODE;
       new_token.lexeme = malloc(12);
-      sprintf(new_token.lexeme, "%d", n_idx++);
+      sprintf(new_token.lexeme, "%d", out_n_idx++);
       // printf("new token lexeme: %s\n", new_token.lexeme);
       // printf("references node of type %s", node_type_table[nodes[n_idx-1].type]);
 
       // emit it
-      new_tokens[new_t_idx++] = new_token;
+      out_tokens[out_t_idx++] = new_token;
     } else {
       // otherwise just emit the same token
-      new_tokens[new_t_idx++] = tokens[(*t_idx)++];
+      out_tokens[out_t_idx++] = tokens[(*t_idx)++];
+    }
+  }
+  out_tokens[out_t_idx].type = T_EOF;
+
+  ParseResult result = {
+    .tokens = out_tokens,
+    .nodes = out_nodes,
+    .node_count = out_n_idx,
+  };
+  return result;
+}
+
+ParseResult handle_multiply_divide(
+    Token *tokens,
+    Node *prev_nodes,
+    int prev_node_count
+) {
+  int length = 0;
+  while (tokens[length].type != T_EOF) length++;
+
+  Token *out_tokens = malloc((length + 1) * sizeof(Token));
+  Node  *out_nodes  = malloc(10 * sizeof(Node));
+
+  int t_idx = 0;
+  int out_t_idx = 0;
+  int out_n_idx = 0;
+
+  TokenType operand_group[3] = { T_INT, T_NAME, T_NODE };
+
+  while (tokens[t_idx].type != T_EOF &&
+         tokens[t_idx].type != T_COMMA &&
+         tokens[t_idx].type != T_RPAREN) {
+
+   // printf("DEBUG: handle_multiply_and_divide: handling token %s\n", token_table[tokens[t_idx].type]);
+
+    if (!(tokens[t_idx].type == T_INT || tokens[t_idx].type == T_NAME || tokens[t_idx].type == T_NODE)) {
+      // emit and skip
+      // printf("DEBUG: saw non-operand, passing through... %d, %s\n", out_t_idx, token_table[tokens[t_idx].type]);
+      out_tokens[out_t_idx++] = tokens[t_idx++];
+      continue;
+    }
+
+    /* ---- left operand ---- */
+    Node *left;
+
+    if (tokens[t_idx].type == T_NODE) {
+      int idx = atoi(tokens[t_idx].lexeme);
+      left = &prev_nodes[idx];
+    } else {
+      left = malloc(sizeof(Node));
+      if (tokens[t_idx].type == T_INT) {
+        Constant *c = malloc(sizeof(Constant));
+        c->value = atoi(tokens[t_idx].lexeme);
+        left->type = CONSTANT;
+        left->data.constant = c;
+
+      } else {
+        Name *n = malloc(sizeof(Name));
+        n->id = tokens[t_idx].lexeme;
+        left->type = NAME;
+        left->data.name = n;
+      }
+    }
+
+    int have_folded_once = 0;
+    /* ---- fold * / chain ---- */
+    while (tokens[t_idx + 1].type == T_MULTIPLY ||
+           tokens[t_idx + 1].type == T_DIVIDE) {
+
+      have_folded_once = 1;
+      // printf("DEBUG: sub-handle_multiply_and_divide: handling token %s\n", token_table[tokens[t_idx + 1].type]);
+
+      BinaryOp *bin = malloc(sizeof(BinaryOp));
+      bin->op = (tokens[t_idx + 1].type == T_MULTIPLY) ? MULT : DIV;
+
+      t_idx += 2;
+
+      Node *right;
+      if (tokens[t_idx].type == T_NODE) {
+        int idx = atoi(tokens[t_idx].lexeme);
+        right = &prev_nodes[idx];
+      } else {
+        right = malloc(sizeof(Node));
+
+        if (tokens[t_idx].type == T_INT) {
+          Constant *c = malloc(sizeof(Constant));
+          c->value = atoi(tokens[t_idx].lexeme);
+          right->type = CONSTANT;
+          right->data.constant = c;
+
+        } else {
+          Name *n = malloc(sizeof(Name));
+          n->id = tokens[t_idx].lexeme;
+          right->type = NAME;
+          right->data.name = n;
+        }
+      }
+
+      bin->left = left;
+      bin->right = right;
+
+      Node *bin_node = malloc(sizeof(Node));
+      bin_node->type = BINARYOP;
+      bin_node->data.binary_op = bin;
+
+      left = bin_node;
+    }
+
+    /* ---- emit node, if we have folded ---- */
+    if (have_folded_once) {
+      out_nodes[out_n_idx] = *left;
+
+      // printf("DEBUG: allocating T_NODE...\n");
+      Token t;
+      t.type = T_NODE;
+      t.lexeme = malloc(12);
+      sprintf(t.lexeme, "%d", out_n_idx);
+
+      out_tokens[out_t_idx++] = t;
+      out_n_idx++;
+      t_idx++;
+    } else {
+      // otherwise just emit the operand
+      out_tokens[out_t_idx++] = tokens[t_idx++];
     }
   }
 
-  // finally terminate with T_EOF by hand
-  new_tokens[new_t_idx].type = T_EOF;
-  new_t_idx = 0;
-  Node *result = parse_flat_expression(new_tokens, &new_t_idx, nodes);
+  out_tokens[out_t_idx].type = T_EOF;
+
+  ParseResult result = {
+    .tokens = out_tokens,
+    .nodes = out_nodes,
+    .node_count = out_n_idx
+  };
+
   return result;
+}
+
+ParseResult handle_add_subtract(
+    Token *tokens,
+    Node *prev_nodes,
+    int prev_node_count
+) {
+  int length = 0;
+  while (tokens[length].type != T_EOF) length++;
+
+  Token *out_tokens = malloc((length + 1) * sizeof(Token));
+  Node  *out_nodes  = malloc(10 * sizeof(Node));
+
+  int t_idx = 0;
+  int out_t_idx = 0;
+  int out_n_idx = 0;
+
+  TokenType operand_group[3] = { T_INT, T_NAME, T_NODE };
+
+  while (tokens[t_idx].type != T_EOF &&
+         tokens[t_idx].type != T_COMMA &&
+         tokens[t_idx].type != T_RPAREN) {
+
+    expect_in(tokens[t_idx].type, operand_group, 3);
+
+    /* ---- left operand ---- */
+    Node *left;
+
+    if (tokens[t_idx].type == T_NODE) {
+      int idx = atoi(tokens[t_idx].lexeme);
+      left = &prev_nodes[idx];
+    } else {
+      left = malloc(sizeof(Node));
+      if (tokens[t_idx].type == T_INT) {
+        Constant *c = malloc(sizeof(Constant));
+        c->value = atoi(tokens[t_idx].lexeme);
+        left->type = CONSTANT;
+        left->data.constant = c;
+
+      } else {
+        Name *n = malloc(sizeof(Name));
+        n->id = tokens[t_idx].lexeme;
+        left->type = NAME;
+        left->data.name = n;
+      }
+    }
+
+    /* ---- fold * / chain ---- */
+    while (tokens[t_idx + 1].type == T_PLUS ||
+           tokens[t_idx + 1].type == T_MINUS) {
+
+      BinaryOp *bin = malloc(sizeof(BinaryOp));
+      bin->op = (tokens[t_idx + 1].type == T_PLUS) ? ADD : SUB;
+
+      t_idx += 2;
+
+      Node *right;
+      if (tokens[t_idx].type == T_NODE) {
+        int idx = atoi(tokens[t_idx].lexeme);
+        right = &prev_nodes[idx];
+      } else {
+        right = malloc(sizeof(Node));
+
+        if (tokens[t_idx].type == T_INT) {
+          Constant *c = malloc(sizeof(Constant));
+          c->value = atoi(tokens[t_idx].lexeme);
+          right->type = CONSTANT;
+          right->data.constant = c;
+
+        } else {
+          Name *n = malloc(sizeof(Name));
+          n->id = tokens[t_idx].lexeme;
+          right->type = NAME;
+          right->data.name = n;
+        }
+      }
+
+      bin->left = left;
+      bin->right = right;
+
+      Node *bin_node = malloc(sizeof(Node));
+      bin_node->type = BINARYOP;
+      bin_node->data.binary_op = bin;
+
+      left = bin_node;
+    }
+
+    /* ---- emit node ---- */
+    out_nodes[out_n_idx] = *left;
+
+    Token t;
+    t.type = T_NODE;
+    t.lexeme = malloc(12);
+    sprintf(t.lexeme, "%d", out_n_idx);
+
+    out_tokens[out_t_idx++] = t;
+    out_n_idx++;
+    t_idx++;
+  }
+
+  out_tokens[out_t_idx].type = T_EOF;
+
+  ParseResult result = {
+    .tokens = out_tokens,
+    .nodes = out_nodes,
+    .node_count = out_n_idx
+  };
+
+  return result;
+}
+
+Node *parse_expression(const Token *tokens, int *t_idx) {
+
+  // one pass for each precedence level 
+  ParseResult f = handle_functions(tokens, t_idx);
+  ParseResult md = handle_multiply_divide(f.tokens, f.nodes, f.node_count);
+  ParseResult as = handle_add_subtract(md.tokens, md.nodes, md.node_count);
+
+  return &as.nodes[0];
 }
 
 Module *parse(const Token *tokens, int *t_idx) {
@@ -418,15 +705,16 @@ char *node_format(Node *n, int indent) {
     result += sprintf(result, "Constant(value=%d)", n->data.constant->value);
   } else if (n->type == NAME) {
     result += sprintf(result, "Name(id='%s')", n->data.name->id);
-  } else if (n->type == BINARYADD) {
+  } else if (n->type == BINARYOP) {
     result += sprintf(
       result, 
-      "BinOp(\n%sleft=%s,\n%sop=Add,\n%sright=%s\n%s)", 
+      "BinOp(\n%sleft=%s,\n%sop=%s,\n%sright=%s\n%s)", 
       space(indent+2),
-      node_format(n->data.binary_add->left, indent+2), 
+      node_format(n->data.binary_op->left, indent+2), 
       space(indent+2),
+      bin_op_table[n->data.binary_op->op],
       space(indent+2),
-      node_format(n->data.binary_add->right, indent+2),
+      node_format(n->data.binary_op->right, indent+2),
       space(indent)
     );
   } else if (n->type == ASSIGN) {
@@ -533,10 +821,10 @@ void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx
       sprintf(bytecode[*b_idx], "LOAD_NAME,'%s'", node->data.name->id);
       *b_idx += 1;
       break;
-    case BINARYADD:
-      walk(node->data.binary_add->left, bytecode, b_idx, consts, c_idx);
-      walk(node->data.binary_add->right, bytecode, b_idx, consts, c_idx);
-      bytecode[*b_idx] = "ADD";
+    case BINARYOP:
+      walk(node->data.binary_op->left, bytecode, b_idx, consts, c_idx);
+      walk(node->data.binary_op->right, bytecode, b_idx, consts, c_idx);
+      bytecode[*b_idx] = "BINARYOP";
       *b_idx += 1;
       break;
     case ASSIGN:
@@ -654,7 +942,8 @@ void print_tokens(Token *tokens) {
 }
 
 int main() {
-  Token *tokens = tokenize("2 + foo(3, foo(3))");
+  // Token *tokens = tokenize("3 + foo(3, bar(2)) + 3 < 2 + baz(3)");
+  Token *tokens = tokenize("3 - 2 * 3 / foo(1/bar(1/baz))");
   print_tokens(tokens);
 
   int t_idx = 0;
