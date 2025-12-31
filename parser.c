@@ -5,6 +5,7 @@
 
 #include "parser.h"
 
+// TODO: module vs node array lingo
 Token *tokenize(const char *source) {
   // malloc fixed array of tokens
   Token *tok = malloc(100 * sizeof(Token));
@@ -253,7 +254,7 @@ Node *parse_flat_expression(const Token *tokens, int *t_idx, const Node *nodes) 
         binary_op->op = MULT;
       } else if (tokens[*t_idx+1].type == T_DIVIDE) {
         binary_op->op = SUB;
-      } // TODO: EQ, LT, GT, LEQ, GEQ
+      }
 
       // move to operand
       (*t_idx) += 2;
@@ -303,7 +304,7 @@ ParseResult handle_functions(Token *tokens, int *t_idx) {
   int out_n_idx = 0;
 
   // TODO: think about terminate condition
-  while (tokens[*t_idx].type != T_EOF && tokens[*t_idx].type != T_COMMA && tokens[*t_idx].type != T_RPAREN) {
+  while (tokens[*t_idx].type != T_EOF && tokens[*t_idx].type != T_COMMA && tokens[*t_idx].type != T_RPAREN && tokens[*t_idx].type != T_COLON && tokens[*t_idx].type != T_NEWLINE) {
     if (tokens[*t_idx].type == T_NAME && tokens[*t_idx+1].type == T_LPAREN) {
       // allocate func name
       Name *n = malloc(sizeof(Name));
@@ -386,7 +387,9 @@ ParseResult handle_multiply_divide(
 
   while (tokens[t_idx].type != T_EOF &&
          tokens[t_idx].type != T_COMMA &&
-         tokens[t_idx].type != T_RPAREN) {
+         tokens[t_idx].type != T_RPAREN &&
+         tokens[t_idx].type != T_COLON &&
+         tokens[t_idx].type != T_NEWLINE) {
 
    // printf("DEBUG: handle_multiply_and_divide: handling token %s\n", token_table[tokens[t_idx].type]);
 
@@ -512,7 +515,9 @@ ParseResult handle_add_subtract(
 
   while (tokens[t_idx].type != T_EOF &&
          tokens[t_idx].type != T_COMMA &&
-         tokens[t_idx].type != T_RPAREN) {
+         tokens[t_idx].type != T_RPAREN &&
+         tokens[t_idx].type != T_COLON &&
+         tokens[t_idx].type != T_NEWLINE) {
 
     expect_in(tokens[t_idx].type, operand_group, 3);
 
@@ -602,14 +607,145 @@ ParseResult handle_add_subtract(
   return result;
 }
 
+ParseResult handle_comparator(
+    Token *tokens,
+    Node *prev_nodes,
+    int prev_node_count
+) {
+  int length = 0;
+  while (tokens[length].type != T_EOF) length++;
+
+  Token *out_tokens = malloc((length + 1) * sizeof(Token));
+  Node  *out_nodes  = malloc(10 * sizeof(Node));
+
+  int t_idx = 0;
+  int out_t_idx = 0;
+  int out_n_idx = 0;
+
+  TokenType operand_group[3] = { T_INT, T_NAME, T_NODE };
+
+  while (tokens[t_idx].type != T_EOF &&
+         tokens[t_idx].type != T_COMMA &&
+         tokens[t_idx].type != T_RPAREN &&
+         tokens[t_idx].type != T_COLON &&
+         tokens[t_idx].type != T_NEWLINE) {
+
+    expect_in(tokens[t_idx].type, operand_group, 3);
+
+    /* ---- left operand ---- */
+    Node *left;
+
+    if (tokens[t_idx].type == T_NODE) {
+      int idx = atoi(tokens[t_idx].lexeme);
+      left = &prev_nodes[idx];
+    } else {
+      left = malloc(sizeof(Node));
+      if (tokens[t_idx].type == T_INT) {
+        Constant *c = malloc(sizeof(Constant));
+        c->value = atoi(tokens[t_idx].lexeme);
+        left->type = CONSTANT;
+        left->data.constant = c;
+
+      } else {
+        Name *n = malloc(sizeof(Name));
+        n->id = tokens[t_idx].lexeme;
+        left->type = NAME;
+        left->data.name = n;
+      }
+    }
+
+    /* ---- fold * / chain ---- */
+    while (tokens[t_idx + 1].type == T_LT ||
+           tokens[t_idx + 1].type == T_LEQ ||
+           tokens[t_idx + 1].type == T_EQ ||
+           tokens[t_idx + 1].type == T_GT ||
+           tokens[t_idx + 1].type == T_GEQ) {
+
+      BinaryOp *bin = malloc(sizeof(BinaryOp));
+      switch (tokens[t_idx+1].type) {
+        case T_EQ:
+          bin->op = EQ;
+          break;
+        case T_LT:
+          bin->op = LT;
+          break;
+        case T_LEQ:
+          bin->op = LTE;
+          break;
+        case T_GT:
+          bin->op = GT;
+          break;
+        case T_GEQ:
+          bin->op = GTE;
+          break;
+      }
+
+      t_idx += 2;
+
+      Node *right;
+      if (tokens[t_idx].type == T_NODE) {
+        int idx = atoi(tokens[t_idx].lexeme);
+        right = &prev_nodes[idx];
+      } else {
+        right = malloc(sizeof(Node));
+
+        if (tokens[t_idx].type == T_INT) {
+          Constant *c = malloc(sizeof(Constant));
+          c->value = atoi(tokens[t_idx].lexeme);
+          right->type = CONSTANT;
+          right->data.constant = c;
+
+        } else {
+          Name *n = malloc(sizeof(Name));
+          n->id = tokens[t_idx].lexeme;
+          right->type = NAME;
+          right->data.name = n;
+        }
+      }
+
+      bin->left = left;
+      bin->right = right;
+
+      Node *bin_node = malloc(sizeof(Node));
+      bin_node->type = BINARYOP;
+      bin_node->data.binary_op = bin;
+
+      left = bin_node;
+    }
+
+    /* ---- emit node ---- */
+    out_nodes[out_n_idx] = *left;
+
+    Token t;
+    t.type = T_NODE;
+    t.lexeme = malloc(12);
+    sprintf(t.lexeme, "%d", out_n_idx);
+
+    out_tokens[out_t_idx++] = t;
+    out_n_idx++;
+    t_idx++;
+  }
+
+  out_tokens[out_t_idx].type = T_EOF;
+
+  ParseResult result = {
+    .tokens = out_tokens,
+    .nodes = out_nodes,
+    .node_count = out_n_idx
+  };
+
+  return result;
+}
+
 Node *parse_expression(const Token *tokens, int *t_idx) {
 
   // one pass for each precedence level 
   ParseResult f = handle_functions(tokens, t_idx);
-  ParseResult md = handle_multiply_divide(f.tokens, f.nodes, f.node_count);
-  ParseResult as = handle_add_subtract(md.tokens, md.nodes, md.node_count);
+  // ParseResult md = handle_multiply_divide(f.tokens, f.nodes, f.node_count);
+  // ParseResult as = handle_add_subtract(md.tokens, md.nodes, md.node_count);
+  ParseResult gl = handle_comparator(f.tokens, f.nodes, f.node_count);
 
-  return &as.nodes[0];
+  return &gl.nodes[0];
 }
 
 Module *parse(const Token *tokens, int *t_idx) {
@@ -638,15 +774,11 @@ Module *parse(const Token *tokens, int *t_idx) {
         strcpy(f->args[a_idx], tokens[*t_idx].lexeme);
         a_idx++;
       }
-      expect(tokens[*t_idx].type, T_RPAREN);
-      expect(tokens[++(*t_idx)].type, T_COLON);
-      expect(tokens[++(*t_idx)].type, T_NEWLINE);
-      expect(tokens[++(*t_idx)].type, T_INDENT);
-      (*t_idx)++;
+      expect(tokens[(*t_idx)++].type, T_RPAREN);
+      expect(tokens[(*t_idx)++].type, T_COLON);
+      expect(tokens[(*t_idx)++].type, T_NEWLINE);
+      expect(tokens[(*t_idx)++].type, T_INDENT);
       f->body = parse(tokens, t_idx);
-      if (tokens[*t_idx].type != T_EOF) {
-        expect(tokens[(*t_idx)++].type, T_DEDENT);
-      }
       Node *f_node = malloc(sizeof(Node));
       f_node->type = FUNCTIONDEF;
       f_node->data.function_def = f;
@@ -659,12 +791,31 @@ Module *parse(const Token *tokens, int *t_idx) {
       ret_node->type = RETURN;
       ret_node->data.ret = r;
       result->nodes[n_idx++] = ret_node;
-      break;
     } else if (tokens[*t_idx].type == T_IF) {
-      // Node *test_node = parse_expression(...)
-      ; 
-    } else if (tokens[*t_idx].type == T_ELSE) {
-      ;
+      (*t_idx)++;
+      If *if_struct = malloc(sizeof(If));
+      // parse test expr and check syntax
+      if_struct->test = parse_expression(tokens, t_idx);
+      expect(tokens[(*t_idx)++].type, T_COLON);
+      expect(tokens[(*t_idx)++].type, T_NEWLINE);
+      expect(tokens[(*t_idx)++].type, T_INDENT);
+      // parse body (true block)
+      if_struct->body = parse(tokens, t_idx);
+      if (tokens[*t_idx].type == T_ELSE) {
+        // NOTE: we expand `elif` -> `else if` in tokenization and add
+        // extra INDENT + DEDENT as required (we track depth there...)
+        if (tokens[++(*t_idx)].type == T_COLON) {
+          // NOTE: handle colon and indent if it's a raw `else:`
+          expect(tokens[++(*t_idx)].type, T_NEWLINE);
+          expect(tokens[++(*t_idx)].type, T_INDENT);
+          (*t_idx)++;
+        }
+        if_struct->orelse = parse(tokens, t_idx);
+      }
+      Node *if_node = malloc(sizeof(Node));
+      if_node->type = IF;
+      if_node->data.iff = if_struct;
+      result->nodes[n_idx++] = if_node;
     } else if (tokens[*t_idx].type == T_NAME && tokens[*t_idx+1].type == T_ASSIGN) {
       // assignment
       Assign *ass = malloc(sizeof(Assign));
@@ -681,6 +832,9 @@ Module *parse(const Token *tokens, int *t_idx) {
       // this is a pure newline we see outside of
       // an expression or terminating a block
       (*t_idx)++;
+    } else if (tokens[*t_idx].type == T_DEDENT) {
+      (*t_idx)++;
+      break;
     } else {
       result->nodes[n_idx++] = parse_expression(tokens, t_idx);
     }
@@ -740,7 +894,8 @@ char *node_format(Node *n, int indent) {
   } else if (n->type == CALLFUNCTION) {
     result += sprintf(
       result,
-      "Call(\n%sfunc=Name(id='%s'),\n%sargs=[\n",
+      "%sCall(\n%sfunc=Name(id='%s'),\n%sargs=[\n",
+      space(indent),
       space(indent+2),
       n->data.call_function->func->id,
       space(indent+2)
@@ -787,6 +942,57 @@ char *node_format(Node *n, int indent) {
           space(indent+2),
           space(indent)
         );
+      }
+    }
+  } else if (n->type == IF) {
+    result += sprintf(
+      result,
+      "%sIf(\n%stest=%s,\n",
+      space(indent),
+      space(indent+2),
+      node_format(n->data.iff->test, indent+2)
+    );
+    result += sprintf(
+      result,
+      "%sbody=[\n",
+      space(indent+2)
+    );
+    for (int j=0; n->data.iff->body->nodes[j] != NULL; j++) {
+      result += sprintf(
+        result,
+        node_format(n->data.iff->body->nodes[j], indent+4)
+      );
+      if (n->data.iff->body->nodes[j+1] != NULL) {
+        result += sprintf(result, ",\n");
+      } else {
+        result += sprintf(
+          result, 
+          "\n%s]", 
+          space(indent+2)
+        );
+      }
+    }
+    if (n->data.iff->orelse != NULL) {
+      result += sprintf(
+        result,
+        ",\n%sorelse=[\n",
+        space(indent+2)
+      );
+      for (int j=0; n->data.iff->orelse->nodes[j] != NULL; j++) {
+        result += sprintf(
+          result,
+          node_format(n->data.iff->orelse->nodes[j], indent+4)
+        );
+        if (n->data.iff->orelse->nodes[j+1] != NULL) {
+          result += sprintf(result, ",\n");
+        } else {
+          result += sprintf(
+            result, 
+            "\n%s]\n%s)", 
+            space(indent+2),
+            space(indent)
+          );
+        }
       }
     }
   }
@@ -942,8 +1148,9 @@ void print_tokens(Token *tokens) {
 }
 
 int main() {
-  // Token *tokens = tokenize("3 + foo(3, bar(2)) + 3 < 2 + baz(3)");
-  Token *tokens = tokenize("3 - 2 * 3 / foo(1/bar(1/baz))");
+  // Token *tokens = tokenize("if 2 < 3:\n    print(1)\nelse:\n    if 1 < 2:\n        print(4)\n    else:\n        print(5)");
+  Token *tokens = tokenize("print(1 + foo(3))"); // TODO: fix bug
+  // Token *tokens = tokenize("if 2 < 3:\n    print(3),print(1)"); // TODO: memory error
   print_tokens(tokens);
 
   int t_idx = 0;

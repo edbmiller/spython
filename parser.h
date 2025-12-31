@@ -217,6 +217,7 @@ typedef struct Module {
   Node *nodes[20];
 } Module;
 
+char *node_format(Node *n, int indent);
 void module_print(Module *m);
 PyCodeObject *module_walk(Module *m);
 Node *parse_expression(const Token *tokens, int *t_idx);
