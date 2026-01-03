@@ -90,7 +90,7 @@ typedef enum {
   OP_LOAD_CONST,
   OP_STORE_NAME,
   OP_LOAD_NAME,
-  OP_ADD,
+  OP_BINARY_OP,
   OP_MAKE_FUNCTION,
   OP_CALL_FUNCTION, // called with int argn, number of args to pop from stack
   OP_RETURN,
@@ -148,11 +148,11 @@ OpCode get_opcode(const char *input) {
   while (input[i] != ',' && input[i] != '\0')
     i++;
   
-  // TODO: use a hash-table
+  // TODO: use get_opcode and switch-case
   if (equals_opcode(input, i, "LOAD_CONST"))
     return OP_LOAD_CONST;
-  else if (equals_opcode(input, i, "ADD"))
-    return OP_ADD;
+  else if (equals_opcode(input, i, "BINARY_OP"))
+    return OP_BINARY_OP;
   else if (equals_opcode(input, i, "RETURN"))
     return OP_RETURN;
   else if (equals_opcode(input, i, "LOAD_NAME"))
@@ -228,21 +228,24 @@ void handle_bytecode(PyState *state, const char *input) {
   // take a bytecode instruction and mutate frame and/or its stack
   OpCode opcode = get_opcode(input); 
   char *varname;
+  // printf("DEBUG: handling bytecode %s\n", input);
   switch (opcode) { 
-    case OP_LOAD_CONST:
+    case OP_LOAD_CONST: {
       // get obj from pre-compiled consts array
       int idx = get_operand(input); 
       PyObject *constant = state->current_frame->code->consts[idx];
       stack_push(state->current_frame->value_stack, constant);
       state->current_frame->bytecode_offset += 1; // move us forward one instruction
       break;
-    case OP_STORE_NAME:
+    }
+    case OP_STORE_NAME: {
       // save stack[-1] to variable named operand
       PyObject *top = stack_pop(state->current_frame->value_stack);
       varname = get_string_operand(input);
       hashtable_insert(state->current_frame->locals, varname, top); // in bottom frame this points to globals
       state->current_frame->bytecode_offset += 1;
       break;
+    }
     case OP_LOAD_NAME:
       // get variable name
       varname = get_string_operand(input); 
@@ -265,28 +268,92 @@ void handle_bytecode(PyState *state, const char *input) {
       }
       state->current_frame->bytecode_offset += 1;
       break;
-    case OP_ADD:
-      PyObject *b = stack_pop(state->current_frame->value_stack);
-      PyObject *a = stack_pop(state->current_frame->value_stack);
-      if (a->type == PY_INT && b->type == PY_INT) {
-        PyIntObject *result = malloc(sizeof(PyIntObject));
-        result->value = ((PyIntObject *) a)->value + ((PyIntObject *) b)->value;
-        stack_push(state->current_frame->value_stack, (PyObject *) result); 
-        state->current_frame->bytecode_offset += 1;
-        break;
-      } else {
-        printf("TypeError: can't add non-ints\n");    
-        exit(1); 
+    case OP_BINARY_OP: {
+      // get binary operator
+      int bin_op = get_operand(input); 
+      if (bin_op == ADD) {
+        // ADD ------------
+        PyObject *b = stack_pop(state->current_frame->value_stack);
+        PyObject *a = stack_pop(state->current_frame->value_stack);
+        if (a->type == PY_INT && b->type == PY_INT) {
+          PyIntObject *result = malloc(sizeof(PyIntObject));
+          result->value = ((PyIntObject *) a)->value + ((PyIntObject *) b)->value;
+          stack_push(state->current_frame->value_stack, (PyObject *) result); 
+          state->current_frame->bytecode_offset += 1;
+          break;
+        } else {
+          printf("TypeError: can't add non-ints\n");    
+          exit(1); 
+        }
+      } else if (bin_op == SUB) {
+        // SUBTRACT ------
+        PyObject *b = stack_pop(state->current_frame->value_stack);
+        PyObject *a = stack_pop(state->current_frame->value_stack);
+        if (a->type == PY_INT && b->type == PY_INT) {
+          PyIntObject *result = malloc(sizeof(PyIntObject));
+          result->value = ((PyIntObject *) a)->value - ((PyIntObject *) b)->value;
+          stack_push(state->current_frame->value_stack, (PyObject *) result); 
+          state->current_frame->bytecode_offset += 1;
+          break;
+        } else {
+          printf("TypeError: can't subtract non-ints\n");    
+          exit(1); 
+        }
+      } else if (bin_op == MULT) {
+        // MULTIPLY ------
+        PyObject *b = stack_pop(state->current_frame->value_stack);
+        PyObject *a = stack_pop(state->current_frame->value_stack);
+        if (a->type == PY_INT && b->type == PY_INT) {
+          PyIntObject *result = malloc(sizeof(PyIntObject));
+          result->value = ((PyIntObject *) a)->value * ((PyIntObject *) b)->value;
+          stack_push(state->current_frame->value_stack, (PyObject *) result); 
+          state->current_frame->bytecode_offset += 1;
+          break;
+        } else {
+          printf("TypeError: can't multiply non-ints\n");    
+          exit(1); 
+        }
+      } else if (bin_op == DIV) {
+        // DIVIDE ------
+        PyObject *b = stack_pop(state->current_frame->value_stack);
+        PyObject *a = stack_pop(state->current_frame->value_stack);
+        if (a->type == PY_INT && b->type == PY_INT) {
+          PyIntObject *result = malloc(sizeof(PyIntObject));
+          result->value = ((PyIntObject *) a)->value / ((PyIntObject *) b)->value;
+          stack_push(state->current_frame->value_stack, (PyObject *) result); 
+          state->current_frame->bytecode_offset += 1;
+          break;
+        } else {
+          printf("TypeError: can't divide non-ints\n");    
+          exit(1); 
+        }
+      } else if (bin_op == EQ) {
+        // EQUALS ------
+        PyObject *b = stack_pop(state->current_frame->value_stack);
+        PyObject *a = stack_pop(state->current_frame->value_stack);
+        if (a->type == PY_INT && b->type == PY_INT) {
+          PyBoolObject *result = malloc(sizeof(PyBoolObject));
+          result->value = ((PyIntObject *) a)->value == ((PyIntObject *) b)->value;
+          printf("DEBUG: comparing %d to %d\n", ((PyIntObject *) a)->value, ((PyIntObject *) b)->value);
+          stack_push(state->current_frame->value_stack, (PyObject *) result); 
+          state->current_frame->bytecode_offset += 1;
+          break;
+        } else {
+          printf("TypeError: can't compare non-ints\n");    
+          exit(1); 
+        }
       }
-    case OP_MAKE_FUNCTION:
+    }
+    case OP_MAKE_FUNCTION: {
       // make func obj
       PyFuncObject *new_func = malloc(sizeof(PyFuncObject));
       new_func->type = PY_FUNC;
-      new_func->code = stack_pop(state->current_frame->value_stack); 
+      new_func->code = (PyCodeObject *) stack_pop(state->current_frame->value_stack); 
       // push to stack - next opcode will be STORE_NAME...
       stack_push(state->current_frame->value_stack, (PyObject *) new_func);
       state->current_frame->bytecode_offset += 1;
       break;
+    }
     case OP_CALL_FUNCTION:
       // push a new frame to callstack, remembering our
       // current bytecode offset in the current frame
@@ -333,7 +400,7 @@ void handle_bytecode(PyState *state, const char *input) {
         state->current_frame->bytecode_offset += 1; 
       }
       break;
-    case OP_RETURN:
+    case OP_RETURN: {
       // pop a frame from the callstack, return to the
       // bytecode instruction referenced in the caller frame
       // (and push the return'd value to the value stack of
@@ -346,10 +413,11 @@ void handle_bytecode(PyState *state, const char *input) {
       state->recursion_depth -= 1;
       // TODO: deallocate old frame!
       break;
+    }
     case OP_POP_TOP:
       stack_pop(state->current_frame->value_stack);
       break;
-    case OP_COMPARE:
+    case OP_COMPARE: {
       // e.g. "COMPARE,0" means '=='
       // compare and push bool result
       PyIntObject *right = (PyIntObject *) stack_pop(state->current_frame->value_stack);
@@ -359,7 +427,8 @@ void handle_bytecode(PyState *state, const char *input) {
       stack_push(state->current_frame->value_stack, (PyObject *) result);
       state->current_frame->bytecode_offset += 1;
       break;
-    case OP_POP_JUMP_IF_FALSE:
+    }
+    case OP_POP_JUMP_IF_FALSE: {
       PyBoolObject *top_bool = (PyBoolObject *) stack_pop(state->current_frame->value_stack);
       int target = get_operand(input); // jump target offset
       if (top_bool->value == 0)
@@ -367,11 +436,12 @@ void handle_bytecode(PyState *state, const char *input) {
       else
         state->current_frame->bytecode_offset += 1;
       break;
+    }
     case OP_JUMP:
       state->current_frame->bytecode_offset = get_operand(input);
       break;
     case OP_UNKNOWN:
-      printf("error: bad opcode\n");
+      printf("error: bad opcode %s\n", input);
       exit(1); 
   }
 }
@@ -415,6 +485,12 @@ PyObject *py_builtin_print(PyTupleObject *args) {
       case PY_CFUNC:
         printf("error: print not defined for builtins\n");
         break;
+      case PY_BOOL:
+        printf("error: print not defined for bools\n");
+        break;
+      case PY_TUPLE:
+        printf("error: print not defined for tuples\n");
+        break;
     }
     if (args->elements[i+1] != NULL)
       printf(" ");
@@ -435,7 +511,7 @@ int main(int argc, char **argv) {
   PyCFuncObject *py_builtin_print_object = malloc(sizeof(PyCFuncObject));
   py_builtin_print_object->type = PY_CFUNC;
   py_builtin_print_object->function = py_builtin_print_function;
-  hashtable_insert(&globals, "print", py_builtin_print_object);
+  hashtable_insert(&globals, "print", (PyObject *) py_builtin_print_object);
 
   // initialise state with current frame
   PyFrameObject bottom_frame;
@@ -454,7 +530,7 @@ int main(int argc, char **argv) {
   // -> walk into a total string array of instructions
   char *input = read_file(argv[1]);
   Token *tokens = tokenize(input);
-  print_tokens(tokens);
+  // print_tokens(tokens);
 
   int t_idx = 0;
   Module *module = parse(tokens, &t_idx);

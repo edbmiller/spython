@@ -188,111 +188,13 @@ void expect_in(TokenType r, TokenType group[], int group_length) {
   exit(1);
 }
 
-// NOTE: broken
-int is_in(TokenType r, TokenType group[], int group_length) {
-  for (int i=0; i<group_length; i++) {
-    if (r == group[i]) {
-      return 0;
-    }
-  }
-  return 1;
-}
-
-Node *parse_flat_expression(const Token *tokens, int *t_idx, const Node *nodes) {
-  Node *result = malloc(sizeof(Node));
-  TokenType operand_token_group[3] = { T_INT, T_NAME, T_NODE };
-  TokenType operator_token_group[4] = {
-    T_PLUS, 
-    T_MINUS, 
-    T_MULTIPLY, 
-    T_DIVIDE,
-    T_EQ,
-    T_LT,
-    T_GT,
-    T_LEQ,
-    T_GEQ,
-  };
-
-  // iterate: take first two operands, compute, and repeat
-  expect_in(tokens[*t_idx].type, operand_token_group, 3);
-
-  // allocate first operand node
-  Node *left_node = malloc(sizeof(Node));
-  if (tokens[*t_idx].type == T_INT) {
-    Constant *c = malloc(sizeof(Constant));
-    c->value = atoi(tokens[*t_idx].lexeme);
-    left_node->type = CONSTANT;
-    left_node->data.constant = c;
-  } else if (tokens[*t_idx].type == T_NAME) {
-    Name *n = malloc(sizeof(Name));
-    n->id = tokens[*t_idx].lexeme;
-    left_node->type = NAME;
-    left_node->data.name = n;
-  } else if (tokens[*t_idx].type == T_NODE) {
-    int node_idx = atoi(tokens[*t_idx].lexeme);
-    left_node = &nodes[node_idx];
-  }
-
-  while (1) {
-    // if we're done, return it
-    if (tokens[*t_idx+1].type == T_NEWLINE) {
-      *t_idx += 2;
-      return left_node;
-    } else if (tokens[*t_idx+1].type == T_EOF) {
-      *t_idx += 1;
-      return left_node;
-    } else {
-      // otherwise combine and continue with this as left_node - 
-      // expect an operator and operand, and allocate the bin-op node
-      expect_in(tokens[*t_idx+1].type, operator_token_group, 4);
-      BinaryOp *binary_op = malloc(sizeof(BinaryOp));
-      if (tokens[*t_idx+1].type == T_PLUS) {
-        binary_op->op = ADD;
-      } else if (tokens[*t_idx+1].type == T_MINUS) {
-        binary_op->op = SUB;
-      } else if (tokens[*t_idx+1].type == T_MULTIPLY) {
-        binary_op->op = MULT;
-      } else if (tokens[*t_idx+1].type == T_DIVIDE) {
-        binary_op->op = SUB;
-      }
-
-      // move to operand
-      (*t_idx) += 2;
-      Node *right_node = malloc(sizeof(Node));
-      if (tokens[*t_idx].type == T_INT) {
-        Constant *c = malloc(sizeof(Constant));
-        c->value = atoi(tokens[*t_idx].lexeme);
-        right_node->type = CONSTANT;
-        right_node->data.constant = c;
-      } else if (tokens[*t_idx].type == T_NAME) {
-        Name *n = malloc(sizeof(Name));
-        n->id = tokens[*t_idx].lexeme;
-        right_node->type = NAME;
-        right_node->data.name = n;
-      } else if (tokens[*t_idx].type == T_NODE) {
-        int node_idx = atoi(tokens[*t_idx].lexeme);
-        right_node = &nodes[node_idx];
-      }
-
-      binary_op->left = left_node;
-      binary_op->right = right_node;
-      Node *bin_op_node = malloc(sizeof(Node));
-      bin_op_node->data.binary_op = binary_op;
-      bin_op_node->type = BINARYOP;
-
-      // now replace left_node
-      left_node = bin_op_node;
-    }
-  }
-}
-
 typedef struct {
   Token *tokens;
   Node  *nodes;
   int    node_count;
 } ParseResult;
 
-ParseResult handle_functions(Token *tokens, int *t_idx) {
+ParseResult handle_functions(const Token *tokens, int *t_idx) {
 
   int length = 0;
   while (tokens[length].type != T_EOF) length++;
@@ -391,11 +293,8 @@ ParseResult handle_multiply_divide(
          tokens[t_idx].type != T_COLON &&
          tokens[t_idx].type != T_NEWLINE) {
 
-   // printf("DEBUG: handle_multiply_and_divide: handling token %s\n", token_table[tokens[t_idx].type]);
-
     if (!(tokens[t_idx].type == T_INT || tokens[t_idx].type == T_NAME || tokens[t_idx].type == T_NODE)) {
       // emit and skip
-      // printf("DEBUG: saw non-operand, passing through... %d, %s\n", out_t_idx, token_table[tokens[t_idx].type]);
       out_tokens[out_t_idx++] = tokens[t_idx++];
       continue;
     }
@@ -422,13 +321,9 @@ ParseResult handle_multiply_divide(
       }
     }
 
-    int have_folded_once = 0;
     /* ---- fold * / chain ---- */
     while (tokens[t_idx + 1].type == T_MULTIPLY ||
            tokens[t_idx + 1].type == T_DIVIDE) {
-
-      have_folded_once = 1;
-      // printf("DEBUG: sub-handle_multiply_and_divide: handling token %s\n", token_table[tokens[t_idx + 1].type]);
 
       BinaryOp *bin = malloc(sizeof(BinaryOp));
       bin->op = (tokens[t_idx + 1].type == T_MULTIPLY) ? MULT : DIV;
@@ -466,23 +361,17 @@ ParseResult handle_multiply_divide(
       left = bin_node;
     }
 
-    /* ---- emit node, if we have folded ---- */
-    if (have_folded_once) {
-      out_nodes[out_n_idx] = *left;
+    /* ---- emit node ---- */
+    out_nodes[out_n_idx] = *left;
 
-      // printf("DEBUG: allocating T_NODE...\n");
-      Token t;
-      t.type = T_NODE;
-      t.lexeme = malloc(12);
-      sprintf(t.lexeme, "%d", out_n_idx);
+    Token t;
+    t.type = T_NODE;
+    t.lexeme = malloc(12);
+    sprintf(t.lexeme, "%d", out_n_idx);
 
-      out_tokens[out_t_idx++] = t;
-      out_n_idx++;
-      t_idx++;
-    } else {
-      // otherwise just emit the operand
-      out_tokens[out_t_idx++] = tokens[t_idx++];
-    }
+    out_tokens[out_t_idx++] = t;
+    out_n_idx++;
+    t_idx++;
   }
 
   out_tokens[out_t_idx].type = T_EOF;
@@ -519,7 +408,11 @@ ParseResult handle_add_subtract(
          tokens[t_idx].type != T_COLON &&
          tokens[t_idx].type != T_NEWLINE) {
 
-    expect_in(tokens[t_idx].type, operand_group, 3);
+    if (!(tokens[t_idx].type == T_INT || tokens[t_idx].type == T_NAME || tokens[t_idx].type == T_NODE)) {
+      // emit and skip
+      out_tokens[out_t_idx++] = tokens[t_idx++];
+      continue;
+    }
 
     /* ---- left operand ---- */
     Node *left;
@@ -678,6 +571,10 @@ ParseResult handle_comparator(
         case T_GEQ:
           bin->op = GTE;
           break;
+        default:
+          printf("error: non-comparison bin-op: %d\n", tokens[t_idx+1].type);
+          exit(1);
+          break;
       }
 
       t_idx += 2;
@@ -738,13 +635,11 @@ ParseResult handle_comparator(
 }
 
 Node *parse_expression(const Token *tokens, int *t_idx) {
-
   // one pass for each precedence level 
   ParseResult f = handle_functions(tokens, t_idx);
-  // ParseResult md = handle_multiply_divide(f.tokens, f.nodes, f.node_count);
-  // ParseResult as = handle_add_subtract(md.tokens, md.nodes, md.node_count);
-  ParseResult gl = handle_comparator(f.tokens, f.nodes, f.node_count);
-
+  ParseResult md = handle_multiply_divide(f.tokens, f.nodes, f.node_count);
+  ParseResult as = handle_add_subtract(md.tokens, md.nodes, md.node_count);
+  ParseResult gl = handle_comparator(as.tokens, as.nodes, as.node_count);
   return &gl.nodes[0];
 }
 
@@ -839,6 +734,7 @@ Module *parse(const Token *tokens, int *t_idx) {
       result->nodes[n_idx++] = parse_expression(tokens, t_idx);
     }
   }
+  result->nodes[n_idx] = NULL;
   return result;
 }
 
@@ -862,7 +758,7 @@ char *node_format(Node *n, int indent) {
   } else if (n->type == BINARYOP) {
     result += sprintf(
       result, 
-      "BinOp(\n%sleft=%s,\n%sop=%s,\n%sright=%s\n%s)", 
+      "BinOp(\n%sleft=%s,\n%sop=%s,\n%sright=%s\n%s)",
       space(indent+2),
       node_format(n->data.binary_op->left, indent+2), 
       space(indent+2),
@@ -874,8 +770,7 @@ char *node_format(Node *n, int indent) {
   } else if (n->type == ASSIGN) {
     result += sprintf(
       result,
-      "%sAssign(\n%starget=Name(id='%s'),\n%svalue=%s\n%s)",
-      space(indent),
+      "Assign(\n%starget=Name(id='%s'),\n%svalue=%s\n%s)",
       space(indent+2),
       n->data.assign->target->id,
       space(indent+2),
@@ -885,8 +780,7 @@ char *node_format(Node *n, int indent) {
   } else if (n->type == RETURN) {
     result += sprintf(
       result,
-      "%sReturn(\n%svalue=%s\n%s)",
-      space(indent),
+      "Return(\n%svalue=%s\n%s)",
       space(indent+2),
       node_format(n->data.ret->value, indent+2),
       space(indent)
@@ -894,8 +788,7 @@ char *node_format(Node *n, int indent) {
   } else if (n->type == CALLFUNCTION) {
     result += sprintf(
       result,
-      "%sCall(\n%sfunc=Name(id='%s'),\n%sargs=[\n",
-      space(indent),
+      "Call(\n%sfunc=Name(id='%s'),\n%sargs=[\n",
       space(indent+2),
       n->data.call_function->func->id,
       space(indent+2)
@@ -903,7 +796,7 @@ char *node_format(Node *n, int indent) {
     for (int i=0; i<n->data.call_function->argc; i++) {
       result += sprintf(result, 
         "%s%s,\n", 
-        space(indent+4), 
+        space(indent+4),
         node_format(n->data.call_function->args+i, indent+4)
       );
     }
@@ -925,12 +818,15 @@ char *node_format(Node *n, int indent) {
     }
     result += sprintf(
       result,
-      "],\n%sbody=[\n",
+      "],\n%sbody=[%s\n",
+      space(indent+2),
       space(indent+2)
     );
     for (int j=0; n->data.function_def->body->nodes[j] != NULL; j++) {
       result += sprintf(
         result,
+        "%s%s",
+        space(indent+4),
         node_format(n->data.function_def->body->nodes[j], indent+4)
       );
       if (n->data.function_def->body->nodes[j+1] != NULL) {
@@ -947,8 +843,7 @@ char *node_format(Node *n, int indent) {
   } else if (n->type == IF) {
     result += sprintf(
       result,
-      "%sIf(\n%stest=%s,\n",
-      space(indent),
+      "If(\n%stest=%s,\n",
       space(indent+2),
       node_format(n->data.iff->test, indent+2)
     );
@@ -960,6 +855,8 @@ char *node_format(Node *n, int indent) {
     for (int j=0; n->data.iff->body->nodes[j] != NULL; j++) {
       result += sprintf(
         result,
+        "%s%s",
+        space(indent+4),
         node_format(n->data.iff->body->nodes[j], indent+4)
       );
       if (n->data.iff->body->nodes[j+1] != NULL) {
@@ -981,6 +878,8 @@ char *node_format(Node *n, int indent) {
       for (int j=0; n->data.iff->orelse->nodes[j] != NULL; j++) {
         result += sprintf(
           result,
+          "%s%s",
+          space(indent+4),
           node_format(n->data.iff->orelse->nodes[j], indent+4)
         );
         if (n->data.iff->orelse->nodes[j+1] != NULL) {
@@ -1012,7 +911,7 @@ void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx
   // buffer according to the current offset
   // first: allocate string
   switch (node->type) {
-    case CONSTANT:
+    case CONSTANT: {
       PyIntObject *constant = malloc(sizeof(PyIntObject));
       constant->type = PY_INT;
       constant->value = node->data.constant->value;
@@ -1022,6 +921,7 @@ void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx
       *b_idx += 1;
       *c_idx += 1;
       break;
+    }
     case NAME:
       bytecode[*b_idx] = malloc(32);
       sprintf(bytecode[*b_idx], "LOAD_NAME,'%s'", node->data.name->id);
@@ -1030,7 +930,8 @@ void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx
     case BINARYOP:
       walk(node->data.binary_op->left, bytecode, b_idx, consts, c_idx);
       walk(node->data.binary_op->right, bytecode, b_idx, consts, c_idx);
-      bytecode[*b_idx] = "BINARYOP";
+      bytecode[*b_idx] = malloc(32); 
+      sprintf(bytecode[*b_idx], "BINARY_OP,%d", node->data.binary_op->op);
       *b_idx += 1;
       break;
     case ASSIGN:
@@ -1039,7 +940,7 @@ void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx
       sprintf(bytecode[*b_idx], "STORE_NAME,'%s'", node->data.assign->target->id);
       *b_idx += 1;
       break;
-    case FUNCTIONDEF:
+    case FUNCTIONDEF: {
       // 1. build PyCodeObject
       PyCodeObject *code = module_walk(node->data.function_def->body);
       code->argnames = node->data.function_def->args;
@@ -1058,6 +959,7 @@ void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx
       sprintf(bytecode[*b_idx], "STORE_NAME,'%s'", node->data.function_def->name);
       *b_idx += 1;
       break;
+    }
     case RETURN:
       walk(node->data.ret->value, bytecode, b_idx, consts, c_idx);
       bytecode[*b_idx] = "RETURN";
@@ -1126,11 +1028,11 @@ PyCodeObject *module_walk(Module *module) {
   result->bytecode = malloc(100 * sizeof(char *));
   result->consts = malloc(10 * sizeof(PyObject *));
   result->argnames = malloc(5 * sizeof(char *));
-  int *bytecode_offset = malloc(sizeof(int));
-  int *consts_offset = malloc(sizeof(int));
+  int b_idx = 0; int c_idx = 0;
   for (int i=0; module->nodes[i] != NULL; i++) {
-    walk(module->nodes[i], result->bytecode, bytecode_offset, result->consts, consts_offset);
+    walk(module->nodes[i], result->bytecode, &b_idx, result->consts, &c_idx);
   }
+  result->bytecode[b_idx] = NULL;
   return result;
 }
 
@@ -1148,9 +1050,7 @@ void print_tokens(Token *tokens) {
 }
 
 int main() {
-  // Token *tokens = tokenize("if 2 < 3:\n    print(1)\nelse:\n    if 1 < 2:\n        print(4)\n    else:\n        print(5)");
-  Token *tokens = tokenize("print(1 + foo(3))"); // TODO: fix bug
-  // Token *tokens = tokenize("if 2 < 3:\n    print(3),print(1)"); // TODO: memory error
+  Token *tokens = tokenize("1");
   print_tokens(tokens);
 
   int t_idx = 0;

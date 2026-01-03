@@ -5,9 +5,9 @@
 #include "hash-table.h"
 
 // djb2 hash
-int hash(const char *str) {
-  int hash = 5381;
-  int c;
+unsigned int hash(const char *str) {
+  unsigned int hash = 5381;
+  unsigned int c;
   
   while ((c = *str++))
     hash = ((hash << 5) + hash) + c;
@@ -36,7 +36,7 @@ void hashtable_init(HashTable *htable) {
 void hashtable_insert(HashTable *htable, const char *key, PyObject *object) {
 
   // figure out bucket
-  int index = hash(key) % htable->size;
+  unsigned int index = hash(key) % htable->size;
   
   // find tail of that list
   Entry *tail = htable->data[index];  
@@ -52,7 +52,7 @@ void hashtable_insert(HashTable *htable, const char *key, PyObject *object) {
 }
 
 PyObject *hashtable_get(HashTable *htable, const char *key) {
-  int index = hash(key) % htable->size;
+  unsigned int index = hash(key) % htable->size;
   Entry *current = htable->data[index]->next;
   while (current != NULL) {
     if (strcmp(current->key, key) == 0)
