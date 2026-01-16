@@ -68,8 +68,8 @@ Token *tokenize(const char *source) {
       tok[t_idx++].lexeme = NULL;
       i++;
     } else if (c == '-') {
-      tok[t_idx++].type = T_MINUS;
-      tok[t_idx].lexeme = NULL;
+      tok[t_idx].type = T_MINUS;
+      tok[t_idx++].lexeme = NULL;
       i++;
     } else if (c == '*') {
       tok[t_idx].type = T_MULTIPLY;
@@ -1050,7 +1050,8 @@ void print_tokens(Token *tokens) {
 }
 
 int main() {
-  Token *tokens = tokenize("1");
+  // bug:
+  Token *tokens = tokenize("foo(1, foo(1 / foo(1) - 3)) < 3");
   print_tokens(tokens);
 
   int t_idx = 0;
