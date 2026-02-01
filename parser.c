@@ -5,10 +5,28 @@
 
 #include "parser.h"
 
+void token_array_init(TokenArray *a) {
+  const int INITIAL_SIZE = 8;
+  a->count = 0;
+  a->size = INITIAL_SIZE;
+  a->data = malloc(INITIAL_SIZE * sizeof(Token));
+}
+
+void token_array_push(TokenArray *a, Token t) {
+  if (a->count == a->size) {
+    // realloc
+    size_t new_size = 2 * a->size;
+    a->data = realloc(a->data, new_size * sizeof(Token));
+    a->size = new_size;
+  }
+  // now push
+  a->data[(a->count)++] = t;
+}
+
 // TODO: module vs node array lingo
 Token *tokenize(const char *source) {
   // malloc fixed array of tokens
-  Token *tok = malloc(100 * sizeof(Token));
+  Token *tok = malloc(10 * sizeof(Token));
   int t_idx = 0; // token idx
   char buf[64]; // buffer for lexeme
   int b_idx = 0; // buffer idx
@@ -749,7 +767,7 @@ char *space(int n) {
 
 // NOTE: first do non-compound nodes
 char *node_format(Node *n, int indent) {
-  char *result = malloc(500); 
+  char *result = malloc(530); 
   char *start = result;
   if (n->type == CONSTANT) {
     result += sprintf(result, "Constant(value=%d)", n->data.constant->value);
@@ -1050,8 +1068,19 @@ void print_tokens(Token *tokens) {
 }
 
 int main() {
-  // bug:
-  Token *tokens = tokenize("foo(1, foo(1 / foo(1) - 3)) < 3");
+  // testing dynamic memory!!!
+  TokenArray a;
+  token_array_init(&a);
+  Token t;
+  t.type = T_PLUS;
+  t.lexeme = NULL;
+  for (int i = 0; i < 10; i++) {
+    token_array_push(&a, t);
+    printf("token array has length: %zu, size: %zu\n", a.count, a.size);
+  }
+  exit(0);
+
+  Token *tokens = tokenize("foo(1, foo(1 / foo(1)) - 3) < 3");
   print_tokens(tokens);
 
   int t_idx = 0;

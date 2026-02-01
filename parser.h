@@ -217,6 +217,12 @@ typedef struct Module {
   Node *nodes[20];
 } Module;
 
+typedef struct {
+  Token *data;
+  size_t count;
+  size_t size;
+} TokenArray;
+
 char *node_format(Node *n, int indent);
 void module_print(Module *m);
 PyCodeObject *module_walk(Module *m);
