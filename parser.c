@@ -24,10 +24,11 @@ void token_array_push(TokenArray *a, Token t) {
 }
 
 // TODO: module vs node array lingo
-Token *tokenize(const char *source) {
-  // malloc fixed array of tokens
-  Token *tok = malloc(10 * sizeof(Token));
-  int t_idx = 0; // token idx
+TokenArray tokenize(const char *source) {
+  // init token array
+  TokenArray tokens;
+  token_array_init(&tokens); 
+
   char buf[64]; // buffer for lexeme
   int b_idx = 0; // buffer idx
 
@@ -35,18 +36,19 @@ Token *tokenize(const char *source) {
   int c; // character being scanned 
   int level = 0; // indentation level
   while ((c = source[i]) != '\0') {
+    Token token; // to be added
     if (isdigit(c)) {
       // start accumulating
       while (isdigit(c)) {
         buf[b_idx++] = c;
         c = source[++i]; 
       }
-      // when done, emit T_INT and clear buffer
-      // NOTE: no malloc needed, the structs already exist in memory uninit'd
-      tok[t_idx].type = T_INT;
       buf[b_idx++] = '\0';
-      tok[t_idx].lexeme = malloc(b_idx);
-      strcpy(tok[t_idx++].lexeme, buf);
+      // when done, emit T_INT and clear buffer
+      token.type = T_INT;
+      token.lexeme = malloc(b_idx);
+      strcpy(token.lexeme, buf);
+      token_array_push(&tokens, token);
       // reset buffer
       b_idx = 0;
     } else if (isalpha(c) || c == '_') {
@@ -55,6 +57,7 @@ Token *tokenize(const char *source) {
         buf[b_idx++] = c;
         c = source[++i];
       }
+      buf[b_idx++] = '\0';
 
       // check keywords
       int is_keyword = 0;
@@ -62,7 +65,9 @@ Token *tokenize(const char *source) {
       for (int j = 0; j < num_keywords; j++) {
         keyword = keywords[j];
         if (strncmp(buf, keyword.kw, keyword.length) == 0) {
-          tok[t_idx++].type = keyword.type;
+          token.type = keyword.type;
+          token.lexeme = NULL;
+          token_array_push(&tokens, token);
           is_keyword = 1;
         }
       }
@@ -70,82 +75,96 @@ Token *tokenize(const char *source) {
       // otherwise it's a normal identifier
       if (is_keyword == 0) {
         // else emit name with lexeme
-        tok[t_idx].type = T_NAME;
-        buf[b_idx++] = '\0';
-        tok[t_idx].lexeme = malloc(b_idx);
-        strcpy(tok[t_idx++].lexeme, buf);
+        token.type = T_NAME;
+        token.lexeme = malloc(b_idx);
+        strcpy(token.lexeme, buf);
+        token_array_push(&tokens, token);
       }
 
       // reset buffer
       b_idx = 0;
-
     } else if (c == ' ') {
       i++;
     } else if (c == '+') { // operators
-      tok[t_idx].type = T_PLUS;
-      tok[t_idx++].lexeme = NULL;
+      token.type = T_PLUS;
+      token.lexeme = NULL;
+      token_array_push(&tokens, token);
       i++;
     } else if (c == '-') {
-      tok[t_idx].type = T_MINUS;
-      tok[t_idx++].lexeme = NULL;
+      token.type = T_MINUS;
+      token.lexeme = NULL;
+      token_array_push(&tokens, token);
       i++;
     } else if (c == '*') {
-      tok[t_idx].type = T_MULTIPLY;
-      tok[t_idx++].lexeme = NULL;
+      token.type = T_MULTIPLY;
+      token.lexeme = NULL;
+      token_array_push(&tokens, token);
       i++;
     } else if (c == '/') {
-      tok[t_idx].type = T_DIVIDE;
-      tok[t_idx++].lexeme = NULL;
+      token.type = T_DIVIDE;
+      token.lexeme = NULL;
+      token_array_push(&tokens, token);
       i++;
     } else if (c == '=') {
       if (source[i+1] == '=') {
-        tok[t_idx].type = T_EQ;
-        tok[t_idx++].lexeme = NULL;
+        token.type = T_EQ;
+        token.lexeme = NULL;
+        token_array_push(&tokens, token);
         i += 2;
       } else {
-        tok[t_idx].type = T_ASSIGN;
-        tok[t_idx++].lexeme = NULL;
+        token.type = T_ASSIGN;
+        token.lexeme = NULL;
+        token_array_push(&tokens, token);
         i += 1;
       }
     } else if (c == '>') {
       if (source[i+1] == '=') {
-        tok[t_idx].type = T_GEQ;
-        tok[t_idx++].lexeme = NULL;
+        token.type = T_GEQ;
+        token.lexeme = NULL;
+        token_array_push(&tokens, token);
         i += 2;
       } else {
-        tok[t_idx].type = T_GT;
-        tok[t_idx++].lexeme = NULL;
+        token.type = T_GT;
+        token.lexeme = NULL;
+        token_array_push(&tokens, token);
         i += 1;
       }
     } else if (c == '<') {
       if (source[i+1] == '=') {
-        tok[t_idx].type = T_LEQ;
-        tok[t_idx++].lexeme = NULL;
+        token.type = T_LEQ;
+        token.lexeme = NULL;
+        token_array_push(&tokens, token);
         i += 2;
       } else {
-        tok[t_idx].type = T_LT;
-        tok[t_idx++].lexeme = NULL;
+        token.type = T_LT;
+        token.lexeme = NULL;
+        token_array_push(&tokens, token);
         i += 1;
       }
     } else if (c == '(') { // punctuation + grouping
-      tok[t_idx].type = T_LPAREN;
-      tok[t_idx++].lexeme = NULL;
+      token.type = T_LPAREN;
+      token.lexeme = NULL;
+      token_array_push(&tokens, token);
       i++;
     } else if (c == ')') {
-      tok[t_idx].type = T_RPAREN;
-      tok[t_idx++].lexeme = NULL;
+      token.type = T_RPAREN;
+      token.lexeme = NULL;
+      token_array_push(&tokens, token);
       i++;
     } else if (c == ',') {
-      tok[t_idx].type = T_COMMA;
-      tok[t_idx++].lexeme = NULL;
+      token.type = T_COMMA;
+      token.lexeme = NULL;
+      token_array_push(&tokens, token);
       i++;
     } else if (c == ':') {
-      tok[t_idx].type = T_COLON;
-      tok[t_idx++].lexeme = NULL;
+      token.type = T_COLON;
+      token.lexeme = NULL;
+      token_array_push(&tokens, token);
       i++;
     } else if (c == '\n') {
-      tok[t_idx].type = T_NEWLINE;
-      tok[t_idx++].lexeme = NULL;
+      token.type = T_NEWLINE;
+      token.lexeme = NULL;
+      token_array_push(&tokens, token);
       i++;
       // count leading spaces + check indentation
       int num_leading_spaces = 0;
@@ -155,14 +174,16 @@ Token *tokenize(const char *source) {
         i++;
       }
       if (num_leading_spaces == (level + 1) * 4) {
-        tok[t_idx].type = T_INDENT;
-        tok[t_idx++].lexeme = NULL,
+        token.type = T_INDENT;
+        token.lexeme = NULL,
+        token_array_push(&tokens, token);
         level++;
       } else if ((gap_size = (num_leading_spaces - (level * 4))) % 4 == 0) {
         // count DEDENTs - note: 0 if no spaces :)
         for (int k=0; k>gap_size/4; k--) {
-          tok[t_idx].type = T_DEDENT;
-          tok[t_idx++].lexeme = NULL;
+          token.type = T_DEDENT;
+          token.lexeme = NULL;
+          token_array_push(&tokens, token);
           level--;
         } 
       } else {
@@ -174,10 +195,12 @@ Token *tokenize(const char *source) {
       exit(1);
     }
   }
- 
-  tok[t_idx].type = T_EOF;
-  tok[t_idx].lexeme = NULL;
-  return tok;
+
+  Token final_token;
+  final_token.type = T_EOF;
+  final_token.lexeme = NULL;
+  token_array_push(&tokens, final_token);
+  return tokens;
 }
 
 static const char *SYNTAX_ERROR_MESSAGE = "SyntaxError: invalid syntax";
@@ -687,6 +710,8 @@ Module *parse(const Token *tokens, int *t_idx) {
         strcpy(f->args[a_idx], tokens[*t_idx].lexeme);
         a_idx++;
       }
+      // null-terminate arg array
+      f->args[a_idx] = NULL;
       expect(tokens[(*t_idx)++].type, T_RPAREN);
       expect(tokens[(*t_idx)++].type, T_COLON);
       expect(tokens[(*t_idx)++].type, T_NEWLINE);
@@ -767,7 +792,7 @@ char *space(int n) {
 
 // NOTE: first do non-compound nodes
 char *node_format(Node *n, int indent) {
-  char *result = malloc(530); 
+  char *result = malloc(530); // TODO: grow dynamically
   char *start = result;
   if (n->type == CONSTANT) {
     result += sprintf(result, "Constant(value=%d)", n->data.constant->value);
@@ -1068,23 +1093,11 @@ void print_tokens(Token *tokens) {
 }
 
 int main() {
-  // testing dynamic memory!!!
-  TokenArray a;
-  token_array_init(&a);
-  Token t;
-  t.type = T_PLUS;
-  t.lexeme = NULL;
-  for (int i = 0; i < 10; i++) {
-    token_array_push(&a, t);
-    printf("token array has length: %zu, size: %zu\n", a.count, a.size);
-  }
-  exit(0);
-
-  Token *tokens = tokenize("foo(1, foo(1 / foo(1)) - 3) < 3");
-  print_tokens(tokens);
+  TokenArray tokens = tokenize("def foo(x):\n    if x > 0:\n        return x\n    else:\n        return 0\nprint(foo(2))");
+  print_tokens(tokens.data);
 
   int t_idx = 0;
-  Module *module = parse(tokens, &t_idx);
+  Module *module = parse(tokens.data, &t_idx);
   printf("module = \n");
   module_print(module);
 

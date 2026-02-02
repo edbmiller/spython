@@ -93,7 +93,13 @@ typedef struct {
   char *lexeme;
 } Token;
 
-Token *tokenize(const char *source);
+typedef struct {
+  Token *data;
+  size_t count;
+  size_t size;
+} TokenArray;
+
+TokenArray tokenize(const char *source);
 
 // parser stuff -------------------------------
 typedef enum NodeType {
@@ -216,12 +222,6 @@ typedef struct Node {
 typedef struct Module {
   Node *nodes[20];
 } Module;
-
-typedef struct {
-  Token *data;
-  size_t count;
-  size_t size;
-} TokenArray;
 
 char *node_format(Node *n, int indent);
 void module_print(Module *m);
