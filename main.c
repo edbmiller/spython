@@ -327,14 +327,30 @@ void handle_bytecode(PyState *state, const char *input) {
           printf("TypeError: can't divide non-ints\n");    
           exit(1); 
         }
-      } else if (bin_op == EQ) {
-        // EQUALS ------
+      } else if (bin_op >= EQ && bin_op <= GTE) {
+        // COMPARATORS -----
         PyObject *b = stack_pop(state->current_frame->value_stack);
         PyObject *a = stack_pop(state->current_frame->value_stack);
         if (a->type == PY_INT && b->type == PY_INT) {
           PyBoolObject *result = malloc(sizeof(PyBoolObject));
-          result->value = ((PyIntObject *) a)->value == ((PyIntObject *) b)->value;
-          printf("DEBUG: comparing %d to %d\n", ((PyIntObject *) a)->value, ((PyIntObject *) b)->value);
+          result->type = PY_BOOL;
+          switch (bin_op) {
+            case EQ:
+              result->value = ((PyIntObject *) a)->value == ((PyIntObject *) b)->value;
+              break;
+            case LT:
+              result->value = ((PyIntObject *) a)->value < ((PyIntObject *) b)->value;
+              break;
+            case GT:
+              result->value = ((PyIntObject *) a)->value > ((PyIntObject *) b)->value;
+              break;
+            case LTE:
+              result->value = ((PyIntObject *) a)->value <= ((PyIntObject *) b)->value;
+              break;
+            case GTE:
+              result->value = ((PyIntObject *) a)->value >= ((PyIntObject *) b)->value;
+              break;
+          }
           stack_push(state->current_frame->value_stack, (PyObject *) result); 
           state->current_frame->bytecode_offset += 1;
           break;
@@ -342,6 +358,9 @@ void handle_bytecode(PyState *state, const char *input) {
           printf("TypeError: can't compare non-ints\n");    
           exit(1); 
         }
+      } else {
+        printf("OperatorError: unhandled operator %d\n", bin_op);
+        exit(1);
       }
     }
     case OP_MAKE_FUNCTION: {
@@ -431,10 +450,11 @@ void handle_bytecode(PyState *state, const char *input) {
     case OP_POP_JUMP_IF_FALSE: {
       PyBoolObject *top_bool = (PyBoolObject *) stack_pop(state->current_frame->value_stack);
       int target = get_operand(input); // jump target offset
-      if (top_bool->value == 0)
+      if (top_bool->value == 0) {
         state->current_frame->bytecode_offset = target;
-      else
+      } else {
         state->current_frame->bytecode_offset += 1;
+      }
       break;
     }
     case OP_JUMP:
@@ -486,7 +506,11 @@ PyObject *py_builtin_print(PyTupleObject *args) {
         printf("error: print not defined for builtins\n");
         break;
       case PY_BOOL:
-        printf("error: print not defined for bools\n");
+        if (((PyBoolObject *) args->elements[i])->value == 1) {
+          printf("True");
+        } else {
+          printf("False");
+        }
         break;
       case PY_TUPLE:
         printf("error: print not defined for tuples\n");
@@ -529,11 +553,11 @@ int main(int argc, char **argv) {
 
   // -> walk into a total string array of instructions
   char *input = read_file(argv[1]);
-  Token *tokens = tokenize(input);
+  TokenArray tokens = tokenize(input);
   // print_tokens(tokens);
 
   int t_idx = 0;
-  Module *module = parse(tokens, &t_idx);
+  Module *module = parse(tokens.data, &t_idx);
   printf("ast = \n");
   module_print(module);
   printf("\n");

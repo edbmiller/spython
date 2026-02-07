@@ -1092,6 +1092,7 @@ void print_tokens(Token *tokens) {
   printf("\n");
 }
 
+/*
 int main() {
   TokenArray tokens = tokenize("def foo(x):\n    if x > 0:\n        return x\n    else:\n        return 0\nprint(foo(2))");
   print_tokens(tokens.data);
@@ -1107,3 +1108,4 @@ int main() {
     printf("%s\n", code->bytecode[i]);
   }
 }
+*/
