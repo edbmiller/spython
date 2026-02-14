@@ -2,6 +2,7 @@
 #define TOKEN_H
 
 #include "hash-table.h"
+#include "string.h"
 
 // tokenizer stuff ----------------------------
 typedef enum {
@@ -95,7 +96,7 @@ typedef struct {
 
 typedef struct {
   Token *data;
-  size_t count;
+  size_t length;
   size_t size;
 } TokenArray;
 
@@ -223,7 +224,7 @@ typedef struct Module {
   Node *nodes[20];
 } Module;
 
-char *node_format(Node *n, int indent);
+String node_format(Node *n, int indent);
 void module_print(Module *m);
 PyCodeObject *module_walk(Module *m);
 Node *parse_expression(const Token *tokens, int *t_idx);

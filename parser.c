@@ -2,25 +2,27 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include "parser.h"
+#include "string.h"
 
 void token_array_init(TokenArray *a) {
   const int INITIAL_SIZE = 8;
-  a->count = 0;
+  a->length = 0;
   a->size = INITIAL_SIZE;
   a->data = malloc(INITIAL_SIZE * sizeof(Token));
 }
 
 void token_array_push(TokenArray *a, Token t) {
-  if (a->count == a->size) {
+  if (a->length == a->size) {
     // realloc
     size_t new_size = 2 * a->size;
     a->data = realloc(a->data, new_size * sizeof(Token));
     a->size = new_size;
   }
   // now push
-  a->data[(a->count)++] = t;
+  a->data[(a->length)++] = t;
 }
 
 // TODO: module vs node array lingo
@@ -790,93 +792,91 @@ char *space(int n) {
   return buf;
 }
 
-// NOTE: first do non-compound nodes
-char *node_format(Node *n, int indent) {
-  char *result = malloc(530); // TODO: grow dynamically
-  char *start = result;
+String node_format(Node *n, int indent) {
+  String result;
+  string_init(&result);
   if (n->type == CONSTANT) {
-    result += sprintf(result, "Constant(value=%d)", n->data.constant->value);
+    string_appendf(&result, "Constant(value=%d)", n->data.constant->value);
   } else if (n->type == NAME) {
-    result += sprintf(result, "Name(id='%s')", n->data.name->id);
+    string_appendf(&result, "Name(id='%s')", n->data.name->id);
   } else if (n->type == BINARYOP) {
-    result += sprintf(
-      result, 
+    string_appendf(
+      &result, 
       "BinOp(\n%sleft=%s,\n%sop=%s,\n%sright=%s\n%s)",
       space(indent+2),
-      node_format(n->data.binary_op->left, indent+2), 
+      node_format(n->data.binary_op->left, indent+2).data, 
       space(indent+2),
       bin_op_table[n->data.binary_op->op],
       space(indent+2),
-      node_format(n->data.binary_op->right, indent+2),
+      node_format(n->data.binary_op->right, indent+2).data,
       space(indent)
     );
   } else if (n->type == ASSIGN) {
-    result += sprintf(
-      result,
+    string_appendf(
+      &result,
       "Assign(\n%starget=Name(id='%s'),\n%svalue=%s\n%s)",
       space(indent+2),
       n->data.assign->target->id,
       space(indent+2),
-      node_format(n->data.assign->value, indent+2),
+      node_format(n->data.assign->value, indent+2).data,
       space(indent)
     );
   } else if (n->type == RETURN) {
-    result += sprintf(
-      result,
+    string_appendf(
+      &result,
       "Return(\n%svalue=%s\n%s)",
       space(indent+2),
-      node_format(n->data.ret->value, indent+2),
+      node_format(n->data.ret->value, indent+2).data,
       space(indent)
     );
   } else if (n->type == CALLFUNCTION) {
-    result += sprintf(
-      result,
+    string_appendf(&result,
       "Call(\n%sfunc=Name(id='%s'),\n%sargs=[\n",
       space(indent+2),
       n->data.call_function->func->id,
       space(indent+2)
     );
     for (int i=0; i<n->data.call_function->argc; i++) {
-      result += sprintf(result, 
+      string_appendf(&result, 
         "%s%s,\n", 
         space(indent+4),
-        node_format(n->data.call_function->args+i, indent+4)
+        node_format(n->data.call_function->args+i, indent+4).data
       );
     }
-    result += sprintf(result, "%s]\n%s)", space(indent+2), space(indent));
+    string_appendf(&result, "%s]\n%s)", space(indent+2), space(indent));
   } else if (n->type == FUNCTIONDEF) {
-    result += sprintf(
-      result,
+    string_appendf(
+      &result,
       "FunctionDef(\n%sname='%s',\n%sargs=[",
       space(indent+2),
       n->data.function_def->name,
       space(indent+2)
     );
     for (int i=0; n->data.function_def->args[i] != NULL; i++) {
-      result += sprintf(
-        result,
+      string_appendf(
+        &result,
         "%s,", 
         n->data.function_def->args[i]
       );
     }
-    result += sprintf(
-      result,
+    string_appendf(
+      &result,
       "],\n%sbody=[%s\n",
       space(indent+2),
       space(indent+2)
     );
     for (int j=0; n->data.function_def->body->nodes[j] != NULL; j++) {
-      result += sprintf(
-        result,
+      string_appendf(
+        &result,
         "%s%s",
         space(indent+4),
-        node_format(n->data.function_def->body->nodes[j], indent+4)
+        node_format(n->data.function_def->body->nodes[j], indent+4).data
       );
       if (n->data.function_def->body->nodes[j+1] != NULL) {
-        result += sprintf(result, ",\n");
+        string_append(&result, ",\n");
       } else {
-        result += sprintf(
-          result, 
+        string_appendf(
+          &result, 
           "\n%s]\n%s)", 
           space(indent+2),
           space(indent)
@@ -884,52 +884,52 @@ char *node_format(Node *n, int indent) {
       }
     }
   } else if (n->type == IF) {
-    result += sprintf(
-      result,
+    string_appendf(
+      &result,
       "If(\n%stest=%s,\n",
       space(indent+2),
-      node_format(n->data.iff->test, indent+2)
+      node_format(n->data.iff->test, indent+2).data
     );
-    result += sprintf(
-      result,
+    string_appendf(
+      &result,
       "%sbody=[\n",
       space(indent+2)
     );
     for (int j=0; n->data.iff->body->nodes[j] != NULL; j++) {
-      result += sprintf(
-        result,
+      string_appendf(
+        &result,
         "%s%s",
         space(indent+4),
-        node_format(n->data.iff->body->nodes[j], indent+4)
+        node_format(n->data.iff->body->nodes[j], indent+4).data
       );
       if (n->data.iff->body->nodes[j+1] != NULL) {
-        result += sprintf(result, ",\n");
+        string_append(&result, ",\n");
       } else {
-        result += sprintf(
-          result, 
+        string_appendf(
+          &result, 
           "\n%s]", 
           space(indent+2)
         );
       }
     }
     if (n->data.iff->orelse != NULL) {
-      result += sprintf(
-        result,
+      string_appendf(
+        &result,
         ",\n%sorelse=[\n",
         space(indent+2)
       );
       for (int j=0; n->data.iff->orelse->nodes[j] != NULL; j++) {
-        result += sprintf(
-          result,
+        string_appendf(
+          &result,
           "%s%s",
           space(indent+4),
-          node_format(n->data.iff->orelse->nodes[j], indent+4)
+          node_format(n->data.iff->orelse->nodes[j], indent+4).data
         );
         if (n->data.iff->orelse->nodes[j+1] != NULL) {
-          result += sprintf(result, ",\n");
+          string_append(&result, ",\n");
         } else {
-          result += sprintf(
-            result, 
+          string_appendf(
+            &result, 
             "\n%s]\n%s)", 
             space(indent+2),
             space(indent)
@@ -938,13 +938,13 @@ char *node_format(Node *n, int indent) {
       }
     }
   }
-  return start;
+  return result;
 }
 
 void module_print(Module *m) {
   Node *n;
   for (int i=0; ((n=m->nodes[i])) != NULL; i++) {
-    printf("%s\n", node_format(n, 0));
+    printf("%s\n", node_format(n, 0).data);
   }
   printf("\n");
 }
@@ -1101,6 +1101,7 @@ int main() {
   Module *module = parse(tokens.data, &t_idx);
   printf("module = \n");
   module_print(module);
+  exit(0);
 
   printf("bytecode = \n");
   PyCodeObject *code = module_walk(module);
