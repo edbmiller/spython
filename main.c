@@ -65,6 +65,7 @@ typedef struct PyFrameObject {
 } PyFrameObject;
 
 void py_frame_object_init(PyFrameObject *frame, HashTable *locals) {
+  frame->code = NULL;
   frame->bytecode_offset = 0;
   frame->prev = NULL;
   frame->value_stack = malloc(sizeof(Stack));
@@ -176,27 +177,22 @@ OpCode get_opcode(const char *input) {
 }
 
 int get_operand(const char *input) {
-
   int c;
   int i = 0;
   while ((c = input[i]) != ',') {
-    // printf("DEBUG: found %c\n", c);
     if (c == '\0')
       return -1; // no operand
     i++;
   }
    
-  // printf("DEBUG: finding operand...\n");
-  char operand[5];
+  char operand[5] = {0};
   int j = 0;
   i++;
   while ((c = input[i]) != '\0') {
-    operand[j] = c;
-    j++;
+    operand[j++] = c;
     i++;
   }
 
-  // printf("DEBUG: operand = %s\n", operand);
   return atoi(operand);
 }
 
@@ -397,7 +393,7 @@ void handle_bytecode(PyState *state, const char *input) {
         // init new frame and populate locals
         PyFrameObject *new_frame = malloc(sizeof(PyFrameObject));
         py_frame_object_init(new_frame, NULL);
-        for (int j=0; j<arg_count; j++) {
+        for (int j=0; j < arg_count; j++) {
           hashtable_insert(new_frame->locals, func->code->argnames[j], args[j]);
         }
         new_frame->prev = state->current_frame;
@@ -411,9 +407,11 @@ void handle_bytecode(PyState *state, const char *input) {
         // malloc args tuple
         PyTupleObject *py_args = malloc(sizeof(PyTupleObject));
         py_args->type = PY_TUPLE;
+        py_args->size = arg_count;
         py_args->elements = malloc(arg_count * sizeof(PyObject *));
-        for (int i=0; args[i] != NULL; i++)
-          py_args->elements[i] = args[i];
+        for (int j=0; j < arg_count; j++) {
+          py_args->elements[j] = args[j];
+        }
         PyObject *result = cfunc->function(py_args);
         stack_push(state->current_frame->value_stack, result);
         state->current_frame->bytecode_offset += 1; 
@@ -491,7 +489,7 @@ char *read_file(const char *filename) {
 
 // BUILT-INS
 PyObject *py_builtin_print(PyTupleObject *args) {
-  for (int i=0; args->elements[i] != NULL; i++) { 
+  for (int i = 0; i < args->size; i++) { 
     switch (args->elements[i]->type) {
       case PY_INT:
         printf("%d", ((PyIntObject *) args->elements[i])->value);
@@ -516,10 +514,11 @@ PyObject *py_builtin_print(PyTupleObject *args) {
         printf("error: print not defined for tuples\n");
         break;
     }
-    if (args->elements[i+1] != NULL)
+    if (i+1 < args->size) {
       printf(" ");
-    else
+    } else {
       printf("\n");
+    }
   }
   return NULL;
 }
