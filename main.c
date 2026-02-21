@@ -267,60 +267,32 @@ void handle_bytecode(PyState *state, const char *input) {
     case OP_BINARY_OP: {
       // get binary operator
       int bin_op = get_operand(input); 
-      if (bin_op == ADD) {
-        // ADD ------------
+      if (bin_op >= ADD && bin_op <= DIV) {
+        // ARITHMETIC -----
         PyObject *b = stack_pop(state->current_frame->value_stack);
         PyObject *a = stack_pop(state->current_frame->value_stack);
         if (a->type == PY_INT && b->type == PY_INT) {
           PyIntObject *result = malloc(sizeof(PyIntObject));
-          result->value = ((PyIntObject *) a)->value + ((PyIntObject *) b)->value;
+          result->type = PY_INT;
+          switch (bin_op) {
+            case ADD: 
+              result->value = ((PyIntObject *) a)->value + ((PyIntObject *) b)->value;
+              break;
+            case SUB:
+              result->value = ((PyIntObject *) a)->value - ((PyIntObject *) b)->value;
+              break;
+            case MULT:
+              result->value = ((PyIntObject *) a)->value * ((PyIntObject *) b)->value;
+              break;
+            case DIV:
+              result->value = ((PyIntObject *) a)->value / ((PyIntObject *) b)->value;
+              break;
+          }
           stack_push(state->current_frame->value_stack, (PyObject *) result); 
           state->current_frame->bytecode_offset += 1;
           break;
         } else {
-          printf("TypeError: can't add non-ints\n");    
-          exit(1); 
-        }
-      } else if (bin_op == SUB) {
-        // SUBTRACT ------
-        PyObject *b = stack_pop(state->current_frame->value_stack);
-        PyObject *a = stack_pop(state->current_frame->value_stack);
-        if (a->type == PY_INT && b->type == PY_INT) {
-          PyIntObject *result = malloc(sizeof(PyIntObject));
-          result->value = ((PyIntObject *) a)->value - ((PyIntObject *) b)->value;
-          stack_push(state->current_frame->value_stack, (PyObject *) result); 
-          state->current_frame->bytecode_offset += 1;
-          break;
-        } else {
-          printf("TypeError: can't subtract non-ints\n");    
-          exit(1); 
-        }
-      } else if (bin_op == MULT) {
-        // MULTIPLY ------
-        PyObject *b = stack_pop(state->current_frame->value_stack);
-        PyObject *a = stack_pop(state->current_frame->value_stack);
-        if (a->type == PY_INT && b->type == PY_INT) {
-          PyIntObject *result = malloc(sizeof(PyIntObject));
-          result->value = ((PyIntObject *) a)->value * ((PyIntObject *) b)->value;
-          stack_push(state->current_frame->value_stack, (PyObject *) result); 
-          state->current_frame->bytecode_offset += 1;
-          break;
-        } else {
-          printf("TypeError: can't multiply non-ints\n");    
-          exit(1); 
-        }
-      } else if (bin_op == DIV) {
-        // DIVIDE ------
-        PyObject *b = stack_pop(state->current_frame->value_stack);
-        PyObject *a = stack_pop(state->current_frame->value_stack);
-        if (a->type == PY_INT && b->type == PY_INT) {
-          PyIntObject *result = malloc(sizeof(PyIntObject));
-          result->value = ((PyIntObject *) a)->value / ((PyIntObject *) b)->value;
-          stack_push(state->current_frame->value_stack, (PyObject *) result); 
-          state->current_frame->bytecode_offset += 1;
-          break;
-        } else {
-          printf("TypeError: can't divide non-ints\n");    
+          printf("TypeError: can't do arithmetic on non-ints\n");    
           exit(1); 
         }
       } else if (bin_op >= EQ && bin_op <= GTE) {
