@@ -7,6 +7,8 @@
 #include "parser.h"
 #include "string.h"
 
+const int MAX_ARGS = 5;
+
 void token_array_init(TokenArray *a) {
   const int INITIAL_SIZE = 8;
   a->length = 0;
@@ -84,6 +86,19 @@ TokenArray tokenize(const char *source) {
       }
 
       // reset buffer
+      b_idx = 0;
+    } else if (c == '"') {
+      c = source[++i];
+      // start accumulating string
+      while ((c = source[i++]) != '"') {
+        buf[b_idx++] = c;
+      }
+      buf[b_idx++] = '\0';
+      // emit token
+      token.type = T_STRING;  
+      token.lexeme = malloc(b_idx);
+      strcpy(token.lexeme, buf);
+      token_array_push(&tokens, token); 
       b_idx = 0;
     } else if (c == ' ') {
       i++;
@@ -254,7 +269,6 @@ ParseResult handle_functions(const Token *tokens, int *t_idx) {
       // allocate func name
       Name *n = malloc(sizeof(Name));
       n->id = tokens[*t_idx].lexeme;
-
       // allocate call 
       CallFunction *call = malloc(sizeof(CallFunction));
       call->func = n;
@@ -262,7 +276,7 @@ ParseResult handle_functions(const Token *tokens, int *t_idx) {
       // move fwd + allocate args
       *t_idx += 2;
       int arg_idx = 0;
-      call->args = malloc(5 * sizeof(Node));
+      call->args = malloc((MAX_ARGS + 1) * sizeof(Node));
       while (tokens[*t_idx].type != T_RPAREN) {
         // TODO: perhaps return Node, not Node* ???
         Node *arg_node = parse_expression(tokens, t_idx);
@@ -328,7 +342,7 @@ ParseResult handle_multiply_divide(
   int out_t_idx = 0;
   int out_n_idx = 0;
 
-  TokenType operand_group[3] = { T_INT, T_NAME, T_NODE };
+  TokenType operand_group[4] = { T_INT, T_STRING, T_NAME, T_NODE };
 
   while (tokens[t_idx].type != T_EOF &&
          tokens[t_idx].type != T_COMMA &&
@@ -336,7 +350,7 @@ ParseResult handle_multiply_divide(
          tokens[t_idx].type != T_COLON &&
          tokens[t_idx].type != T_NEWLINE) {
 
-    if (!(tokens[t_idx].type == T_INT || tokens[t_idx].type == T_NAME || tokens[t_idx].type == T_NODE)) {
+    if (!(tokens[t_idx].type == T_INT || tokens[t_idx].type == T_NAME || tokens[t_idx].type == T_NODE || tokens[t_idx].type == T_STRING)) {
       // emit and skip
       out_tokens[out_t_idx++] = tokens[t_idx++];
       continue;
@@ -352,10 +366,21 @@ ParseResult handle_multiply_divide(
       left = malloc(sizeof(Node));
       if (tokens[t_idx].type == T_INT) {
         Constant *c = malloc(sizeof(Constant));
-        c->value = atoi(tokens[t_idx].lexeme);
+        PyIntObject *v = malloc(sizeof(PyIntObject));
+        v->type = PY_INT;
+        v->value = atoi(tokens[t_idx].lexeme);
+        c->value = (PyObject *) v;
         left->type = CONSTANT;
         left->data.constant = c;
-
+      } else if (tokens[t_idx].type == T_STRING) {
+        Constant *c = malloc(sizeof(Constant));
+        PyBytesObject *v = malloc(sizeof(PyBytesObject));
+        v->type = PY_STRING;
+        v->data = strdup(tokens[t_idx].lexeme);
+        v->size = strlen(tokens[t_idx].lexeme);
+        c->value = (PyObject *) v;
+        left->type = CONSTANT;
+        left->data.constant = c;
       } else {
         Name *n = malloc(sizeof(Name));
         n->id = tokens[t_idx].lexeme;
@@ -382,10 +407,21 @@ ParseResult handle_multiply_divide(
 
         if (tokens[t_idx].type == T_INT) {
           Constant *c = malloc(sizeof(Constant));
-          c->value = atoi(tokens[t_idx].lexeme);
+          PyIntObject *v = malloc(sizeof(PyIntObject));
+          v->type = PY_INT;
+          v->value = atoi(tokens[t_idx].lexeme);
+          c->value = (PyObject *) v;
           right->type = CONSTANT;
           right->data.constant = c;
-
+        } else if (tokens[t_idx].type == T_STRING) {
+          Constant *c = malloc(sizeof(Constant));
+          PyBytesObject *v = malloc(sizeof(PyBytesObject));
+          v->type = PY_STRING;
+          v->data = strdup(tokens[t_idx].lexeme);
+          v->size = strlen(tokens[t_idx].lexeme);
+          c->value = (PyObject *) v;
+          left->type = CONSTANT;
+          left->data.constant = c;
         } else {
           Name *n = malloc(sizeof(Name));
           n->id = tokens[t_idx].lexeme;
@@ -443,7 +479,7 @@ ParseResult handle_add_subtract(
   int out_t_idx = 0;
   int out_n_idx = 0;
 
-  TokenType operand_group[3] = { T_INT, T_NAME, T_NODE };
+  TokenType operand_group[4] = { T_INT, T_STRING, T_NAME, T_NODE };
 
   while (tokens[t_idx].type != T_EOF &&
          tokens[t_idx].type != T_COMMA &&
@@ -451,7 +487,7 @@ ParseResult handle_add_subtract(
          tokens[t_idx].type != T_COLON &&
          tokens[t_idx].type != T_NEWLINE) {
 
-    if (!(tokens[t_idx].type == T_INT || tokens[t_idx].type == T_NAME || tokens[t_idx].type == T_NODE)) {
+    if (!(tokens[t_idx].type == T_INT || tokens[t_idx].type == T_NAME || tokens[t_idx].type == T_NODE || tokens[t_idx].type == T_STRING)) {
       // emit and skip
       out_tokens[out_t_idx++] = tokens[t_idx++];
       continue;
@@ -467,10 +503,21 @@ ParseResult handle_add_subtract(
       left = malloc(sizeof(Node));
       if (tokens[t_idx].type == T_INT) {
         Constant *c = malloc(sizeof(Constant));
-        c->value = atoi(tokens[t_idx].lexeme);
+        PyIntObject *v = malloc(sizeof(PyIntObject));
+        v->type = PY_INT;
+        v->value = atoi(tokens[t_idx].lexeme);
+        c->value = (PyObject *) v;
         left->type = CONSTANT;
         left->data.constant = c;
-
+      } else if (tokens[t_idx].type == T_STRING) {
+        Constant *c = malloc(sizeof(Constant));
+        PyBytesObject *v = malloc(sizeof(PyBytesObject));
+        v->type = PY_STRING;
+        v->data = strdup(tokens[t_idx].lexeme);
+        v->size = strlen(tokens[t_idx].lexeme);
+        c->value = (PyObject *) v;
+        left->type = CONSTANT;
+        left->data.constant = c;
       } else {
         Name *n = malloc(sizeof(Name));
         n->id = tokens[t_idx].lexeme;
@@ -497,10 +544,21 @@ ParseResult handle_add_subtract(
 
         if (tokens[t_idx].type == T_INT) {
           Constant *c = malloc(sizeof(Constant));
-          c->value = atoi(tokens[t_idx].lexeme);
-          right->type = CONSTANT;
-          right->data.constant = c;
-
+          PyIntObject *v = malloc(sizeof(PyIntObject));
+          v->type = PY_INT;
+          v->value = atoi(tokens[t_idx].lexeme);
+          c->value = (PyObject *) v;
+          left->type = CONSTANT;
+          left->data.constant = c;
+        } else if (tokens[t_idx].type == T_STRING) {
+          Constant *c = malloc(sizeof(Constant));
+          PyBytesObject *v = malloc(sizeof(PyBytesObject));
+          v->type = PY_STRING;
+          v->data = strdup(tokens[t_idx].lexeme);
+          v->size = strlen(tokens[t_idx].lexeme);
+          c->value = (PyObject *) v;
+          left->type = CONSTANT;
+          left->data.constant = c;
         } else {
           Name *n = malloc(sizeof(Name));
           n->id = tokens[t_idx].lexeme;
@@ -558,7 +616,7 @@ ParseResult handle_comparator(
   int out_t_idx = 0;
   int out_n_idx = 0;
 
-  TokenType operand_group[3] = { T_INT, T_NAME, T_NODE };
+  TokenType operand_group[4] = { T_INT, T_STRING, T_NAME, T_NODE };
 
   while (tokens[t_idx].type != T_EOF &&
          tokens[t_idx].type != T_COMMA &&
@@ -566,7 +624,7 @@ ParseResult handle_comparator(
          tokens[t_idx].type != T_COLON &&
          tokens[t_idx].type != T_NEWLINE) {
 
-    expect_in(tokens[t_idx].type, operand_group, 3);
+    expect_in(tokens[t_idx].type, operand_group, 4);
 
     /* ---- left operand ---- */
     Node *left;
@@ -578,10 +636,21 @@ ParseResult handle_comparator(
       left = malloc(sizeof(Node));
       if (tokens[t_idx].type == T_INT) {
         Constant *c = malloc(sizeof(Constant));
-        c->value = atoi(tokens[t_idx].lexeme);
+        PyIntObject *v = malloc(sizeof(PyIntObject));
+        v->type = PY_INT;
+        v->value = atoi(tokens[t_idx].lexeme);
+        c->value = (PyObject *) v;
         left->type = CONSTANT;
         left->data.constant = c;
-
+      } else if (tokens[t_idx].type == T_STRING) {
+        Constant *c = malloc(sizeof(Constant));
+        PyBytesObject *v = malloc(sizeof(PyBytesObject));
+        v->type = PY_STRING;
+        v->data = strdup(tokens[t_idx].lexeme);
+        v->size = strlen(tokens[t_idx].lexeme);
+        c->value = (PyObject *) v;
+        left->type = CONSTANT;
+        left->data.constant = c;
       } else {
         Name *n = malloc(sizeof(Name));
         n->id = tokens[t_idx].lexeme;
@@ -631,10 +700,21 @@ ParseResult handle_comparator(
 
         if (tokens[t_idx].type == T_INT) {
           Constant *c = malloc(sizeof(Constant));
-          c->value = atoi(tokens[t_idx].lexeme);
-          right->type = CONSTANT;
-          right->data.constant = c;
-
+          PyIntObject *v = malloc(sizeof(PyIntObject));
+          v->type = PY_INT;
+          v->value = atoi(tokens[t_idx].lexeme);
+          c->value = (PyObject *) v;
+          left->type = CONSTANT;
+          left->data.constant = c;
+        } else if (tokens[t_idx].type == T_STRING) {
+          Constant *c = malloc(sizeof(Constant));
+          PyBytesObject *v = malloc(sizeof(PyBytesObject));
+          v->type = PY_STRING;
+          v->data = strdup(tokens[t_idx].lexeme);
+          v->size = strlen(tokens[t_idx].lexeme);
+          c->value = (PyObject *) v;
+          left->type = CONSTANT;
+          left->data.constant = c;
         } else {
           Name *n = malloc(sizeof(Name));
           n->id = tokens[t_idx].lexeme;
@@ -701,7 +781,7 @@ Module *parse(const Token *tokens, int *t_idx) {
       // accumulate argnames
       expect(tokens[++(*t_idx)].type, T_NAME);
       // do first one
-      f->args = malloc(5 * sizeof(char *)); 
+      f->args = malloc((MAX_ARGS + 1) * sizeof(char *)); 
       f->args[0] = malloc(10);
       strcpy(f->args[0], tokens[*t_idx].lexeme);
       // do rest
@@ -713,7 +793,7 @@ Module *parse(const Token *tokens, int *t_idx) {
         a_idx++;
       }
       // null-terminate arg array
-      f->args[a_idx] = NULL;
+      f->args[a_idx] = NULL; // <----- BAD LINE
       expect(tokens[(*t_idx)++].type, T_RPAREN);
       expect(tokens[(*t_idx)++].type, T_COLON);
       expect(tokens[(*t_idx)++].type, T_NEWLINE);
@@ -796,7 +876,11 @@ String node_format(Node *n, int indent) {
   String result;
   string_init(&result);
   if (n->type == CONSTANT) {
-    string_appendf(&result, "Constant(value=%d)", n->data.constant->value);
+    if (n->data.constant->value->type == PY_INT) {
+      string_appendf(&result, "Constant(value=%d)", ((PyIntObject *) n->data.constant->value)->value);
+    } else if (n->data.constant->value->type == PY_STRING) {
+      string_appendf(&result, "Constant(value='%s')", ((PyBytesObject *) n->data.constant->value)->data);
+    }
   } else if (n->type == NAME) {
     string_appendf(&result, "Name(id='%s')", n->data.name->id);
   } else if (n->type == BINARYOP) {
@@ -955,10 +1039,8 @@ void walk(Node *node, char **bytecode, int *b_idx, PyObject **consts, int *c_idx
   // first: allocate string
   switch (node->type) {
     case CONSTANT: {
-      PyIntObject *constant = malloc(sizeof(PyIntObject));
-      constant->type = PY_INT;
-      constant->value = node->data.constant->value;
-      consts[*c_idx] = (PyObject *) constant;
+      // TODO: is this a move?
+      consts[*c_idx] = node->data.constant->value;
       bytecode[*b_idx] = malloc(32);
       sprintf(bytecode[*b_idx], "LOAD_CONST,%d", *c_idx);
       *b_idx += 1;
@@ -1070,7 +1152,7 @@ PyCodeObject *module_walk(Module *module) {
   result->type = PY_CODE;
   result->bytecode = malloc(100 * sizeof(char *));
   result->consts = malloc(10 * sizeof(PyObject *));
-  result->argnames = malloc(5 * sizeof(char *));
+  result->argnames = malloc((MAX_ARGS + 1) * sizeof(char *));
   int b_idx = 0; int c_idx = 0;
   for (int i=0; module->nodes[i] != NULL; i++) {
     walk(module->nodes[i], result->bytecode, &b_idx, result->consts, &c_idx);
@@ -1092,16 +1174,14 @@ void print_tokens(Token *tokens) {
   printf("\n");
 }
 
-/*
 int main() {
-  TokenArray tokens = tokenize("def foo(x):\n    if x > 0:\n        return x\n    else:\n        return 0\nprint(foo(2))");
+  TokenArray tokens = tokenize("def foo(a):\n    return a\nprint(foo(\"barrrrr\"))");
   print_tokens(tokens.data);
 
   int t_idx = 0;
   Module *module = parse(tokens.data, &t_idx);
   printf("module = \n");
   module_print(module);
-  exit(0);
 
   printf("bytecode = \n");
   PyCodeObject *code = module_walk(module);
@@ -1109,4 +1189,3 @@ int main() {
     printf("%s\n", code->bytecode[i]);
   }
 }
-*/

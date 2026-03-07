@@ -466,6 +466,9 @@ PyObject *py_builtin_print(PyTupleObject *args) {
       case PY_INT:
         printf("%d", ((PyIntObject *) args->elements[i])->value);
         break;
+      case PY_STRING:
+        printf("%s", ((PyBytesObject *) args->elements[i])->data);
+        break;
       case PY_CODE:
         printf("error: print not defined for code objects\n");
         break;

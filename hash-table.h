@@ -4,6 +4,7 @@
 typedef enum {
   PY_INT,
   PY_BOOL,
+  PY_STRING,
   PY_TUPLE,
   PY_CODE,
   PY_FUNC,
@@ -29,7 +30,13 @@ typedef struct PyTupleObject {
   PyType type;
   int size;
   PyObject **elements; // TODO: allocate inline with the [] trick
-} PyTupleObject; 
+} PyTupleObject;
+
+typedef struct PyBytesObject {
+  PyType type;
+  int size;
+  char *data; // TODO: inline
+} PyBytesObject;
 
 typedef struct PyCodeObject {
   PyType type;

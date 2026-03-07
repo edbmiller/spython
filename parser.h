@@ -8,6 +8,7 @@
 typedef enum {
   // literals + identifiers
   T_INT,
+  T_STRING,
   T_NAME,
 
   // keywords
@@ -45,8 +46,9 @@ typedef enum {
   T_EOF
 } TokenType;
 
-static char *token_table[25] = {
+static char *token_table[26] = {
   "INT",
+  "STRING",
   "NAME",
   "DEF",
   "RETURN",
@@ -154,7 +156,7 @@ static char *bin_op_table[9] = {
 };
 
 typedef struct Constant {
-  int value; // TODO: pointer
+  PyObject *value;
 } Constant;
 
 typedef struct Name {
