@@ -291,6 +291,19 @@ void handle_bytecode(PyState *state, const char *input) {
           stack_push(state->current_frame->value_stack, (PyObject *) result); 
           state->current_frame->bytecode_offset += 1;
           break;
+        } else if (a->type == PY_STRING && b->type == PY_STRING && bin_op == ADD) {
+          // TODO: fix heap overflow
+          PyBytesObject *result = malloc(sizeof(PyBytesObject));  
+          result->type = PY_STRING; 
+          int a_size = ((PyBytesObject *) a)->size;
+          int b_size = ((PyBytesObject *) b)->size;
+          result->size = a_size + b_size;
+          result->data = malloc(result->size + 1);
+          memcpy(result->data, ((PyBytesObject *) a)->data, a_size);
+          strcpy(result->data + a_size, ((PyBytesObject *) b)->data);
+          stack_push(state->current_frame->value_stack, (PyObject *) result);
+          state->current_frame->bytecode_offset += 1;
+          break;
         } else {
           printf("TypeError: can't do arithmetic on non-ints\n");    
           exit(1); 
@@ -528,13 +541,13 @@ int main(int argc, char **argv) {
   // -> walk into a total string array of instructions
   char *input = read_file(argv[1]);
   TokenArray tokens = tokenize(input);
-  // print_tokens(tokens);
+  print_tokens(tokens.data);
 
   int t_idx = 0;
   Module *module = parse(tokens.data, &t_idx);
-  printf("ast = \n");
-  module_print(module);
-  printf("\n");
+  // printf("ast = \n");
+  // module_print(module);
+  // printf("\n");
   
   PyCodeObject *code = module_walk(module);
   state.current_frame->code = code;
