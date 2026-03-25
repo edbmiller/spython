@@ -1,9 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "hash-table.h" 
 #include "parser.h"
+
+#include "type.h"
+#include "cfunc.h"
+#include "func.h"
+#include "int.h"
 
 #define MAX_STACK_SIZE 100 
 #define MAX_RECURSION_DEPTH 1000
@@ -267,78 +273,23 @@ void handle_bytecode(PyState *state, const char *input) {
     case OP_BINARY_OP: {
       // get binary operator
       int bin_op = get_operand(input); 
-      if (bin_op >= ADD && bin_op <= DIV) {
-        // ARITHMETIC -----
+      if (bin_op == ADD) {
         PyObject *b = stack_pop(state->current_frame->value_stack);
         PyObject *a = stack_pop(state->current_frame->value_stack);
-        if (a->type == PY_INT && b->type == PY_INT) {
-          PyIntObject *result = malloc(sizeof(PyIntObject));
-          result->type = PY_INT;
-          switch (bin_op) {
-            case ADD: 
-              result->value = ((PyIntObject *) a)->value + ((PyIntObject *) b)->value;
-              break;
-            case SUB:
-              result->value = ((PyIntObject *) a)->value - ((PyIntObject *) b)->value;
-              break;
-            case MULT:
-              result->value = ((PyIntObject *) a)->value * ((PyIntObject *) b)->value;
-              break;
-            case DIV:
-              result->value = ((PyIntObject *) a)->value / ((PyIntObject *) b)->value;
-              break;
-          }
-          stack_push(state->current_frame->value_stack, (PyObject *) result); 
-          state->current_frame->bytecode_offset += 1;
-          break;
-        } else if (a->type == PY_STRING && b->type == PY_STRING && bin_op == ADD) {
-          // TODO: fix heap overflow
-          PyBytesObject *result = malloc(sizeof(PyBytesObject));  
-          result->type = PY_STRING; 
-          int a_size = ((PyBytesObject *) a)->size;
-          int b_size = ((PyBytesObject *) b)->size;
-          result->size = a_size + b_size;
-          result->data = malloc(result->size + 1);
-          memcpy(result->data, ((PyBytesObject *) a)->data, a_size);
-          strcpy(result->data + a_size, ((PyBytesObject *) b)->data);
-          stack_push(state->current_frame->value_stack, (PyObject *) result);
-          state->current_frame->bytecode_offset += 1;
-          break;
-        } else {
-          printf("TypeError: can't do arithmetic on non-ints\n");    
-          exit(1); 
+        // lookup __add__ on `type(a)`
+        PyTypeObject *type_a = a->type; 
+        // assume all dunder methods are builtins
+        PyObject *_add_obj = hashtable_get(type_a->methods, "__add__");
+        if (_add_obj == NULL) {
+          printf("AttributeError: __add__");
+          exit(1);
         }
-      } else if (bin_op >= EQ && bin_op <= GTE) {
-        // COMPARATORS -----
-        PyObject *b = stack_pop(state->current_frame->value_stack);
-        PyObject *a = stack_pop(state->current_frame->value_stack);
-        if (a->type == PY_INT && b->type == PY_INT) {
-          PyBoolObject *result = malloc(sizeof(PyBoolObject));
-          result->type = PY_BOOL;
-          switch (bin_op) {
-            case EQ:
-              result->value = ((PyIntObject *) a)->value == ((PyIntObject *) b)->value;
-              break;
-            case LT:
-              result->value = ((PyIntObject *) a)->value < ((PyIntObject *) b)->value;
-              break;
-            case GT:
-              result->value = ((PyIntObject *) a)->value > ((PyIntObject *) b)->value;
-              break;
-            case LTE:
-              result->value = ((PyIntObject *) a)->value <= ((PyIntObject *) b)->value;
-              break;
-            case GTE:
-              result->value = ((PyIntObject *) a)->value >= ((PyIntObject *) b)->value;
-              break;
-          }
-          stack_push(state->current_frame->value_stack, (PyObject *) result); 
-          state->current_frame->bytecode_offset += 1;
-          break;
-        } else {
-          printf("TypeError: can't compare non-ints\n");    
-          exit(1); 
-        }
+        assert(_add_obj->type == &(py_type_cfunc)); 
+        PyCFunction _add = ((PyCFuncObject *) _add_obj)->function;
+        PyObject *result = _add(a, b);
+        stack_push(state->current_frame->value_stack, result);
+        state->current_frame->bytecode_offset += 1;
+        break;
       } else {
         printf("OperatorError: unhandled operator %d\n", bin_op);
         exit(1);
@@ -347,7 +298,7 @@ void handle_bytecode(PyState *state, const char *input) {
     case OP_MAKE_FUNCTION: {
       // make func obj
       PyFuncObject *new_func = malloc(sizeof(PyFuncObject));
-      new_func->type = PY_FUNC;
+      new_func->base.type = &py_type_func;
       new_func->code = (PyCodeObject *) stack_pop(state->current_frame->value_stack); 
       // push to stack - next opcode will be STORE_NAME...
       stack_push(state->current_frame->value_stack, (PyObject *) new_func);
@@ -372,7 +323,7 @@ void handle_bytecode(PyState *state, const char *input) {
       }
       // pop callable
       PyObject *f = stack_pop(state->current_frame->value_stack); 
-      if (f->type == PY_FUNC) {
+      if (f->type == &py_type_func) {
         // python functions
         PyFuncObject *func = (PyFuncObject *) f;
         // init new frame and populate locals
@@ -387,11 +338,11 @@ void handle_bytecode(PyState *state, const char *input) {
         state->current_frame->bytecode_offset += 1;
         state->current_frame = new_frame;
         state->recursion_depth += 1;
-      } else if (f->type == PY_CFUNC) {
+      } else if (f->type == &py_type_cfunc) {
+        ; /* TODO: reimplement
         PyCFuncObject *cfunc = (PyCFuncObject *) f;
-        // malloc args tuple
         PyTupleObject *py_args = malloc(sizeof(PyTupleObject));
-        py_args->type = PY_TUPLE;
+        py_args->base.type = ...;
         py_args->size = arg_count;
         py_args->elements = malloc(arg_count * sizeof(PyObject *));
         for (int j=0; j < arg_count; j++) {
@@ -400,6 +351,7 @@ void handle_bytecode(PyState *state, const char *input) {
         PyObject *result = cfunc->function(py_args);
         stack_push(state->current_frame->value_stack, result);
         state->current_frame->bytecode_offset += 1; 
+        */
       }
       break;
     case OP_RETURN: {
@@ -473,54 +425,26 @@ char *read_file(const char *filename) {
 }
 
 // BUILT-INS
-PyObject *py_builtin_print(PyTupleObject *args) {
-  for (int i = 0; i < args->size; i++) { 
-    switch (args->elements[i]->type) {
-      case PY_INT:
-        printf("%d", ((PyIntObject *) args->elements[i])->value);
-        break;
-      case PY_STRING:
-        printf("%s", ((PyBytesObject *) args->elements[i])->data);
-        break;
-      case PY_CODE:
-        printf("error: print not defined for code objects\n");
-        break;
-      case PY_FUNC:
-        printf("error: print not defined for functions\n");
-        break;
-      case PY_CFUNC:
-        printf("error: print not defined for builtins\n");
-        break;
-      case PY_BOOL:
-        if (((PyBoolObject *) args->elements[i])->value == 1) {
-          printf("True");
-        } else {
-          printf("False");
-        }
-        break;
-      case PY_TUPLE:
-        printf("error: print not defined for tuples\n");
-        break;
-    }
-    if (i+1 < args->size) {
-      printf(" ");
-    } else {
-      printf("\n");
-    }
-  }
+// TODO: re-implement
+PyObject *py_builtin_print(PyObject *self, PyObject *args) {
   return NULL;
 }
 
 int main(int argc, char **argv) {
+
+  // initialise types
+  py_type_init(&py_type_int);
 
   // initialise globals hash-table
   HashTable globals;
   hashtable_init(&globals);
   
   // load builtins
+  // print ----
   PyCFunction py_builtin_print_function = py_builtin_print;
+  // TODO: allocate on stack ?
   PyCFuncObject *py_builtin_print_object = malloc(sizeof(PyCFuncObject));
-  py_builtin_print_object->type = PY_CFUNC;
+  py_builtin_print_object->base.type = &py_type_cfunc;
   py_builtin_print_object->function = py_builtin_print_function;
   hashtable_insert(&globals, "print", (PyObject *) py_builtin_print_object);
 
@@ -545,9 +469,9 @@ int main(int argc, char **argv) {
 
   int t_idx = 0;
   Module *module = parse(tokens.data, &t_idx);
-  // printf("ast = \n");
-  // module_print(module);
-  // printf("\n");
+  printf("ast = \n");
+  module_print(module);
+  printf("\n");
   
   PyCodeObject *code = module_walk(module);
   state.current_frame->code = code;
@@ -568,4 +492,3 @@ int main(int argc, char **argv) {
   return 0;
 }
 
-// TODO: fix heap-buffer-overflow on test.py

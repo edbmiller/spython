@@ -1,59 +1,65 @@
 #ifndef HASH_TABLE_H
 #define HASH_TABLE_H
 
-typedef enum {
-  PY_INT,
-  PY_BOOL,
-  PY_STRING,
-  PY_TUPLE,
-  PY_CODE,
-  PY_FUNC,
-  PY_CFUNC,
-} PyType;
+// forward declare so we can define PyObject
+struct PyTypeObject;
+struct HashTable;
+struct PyMethodDef;
 
-// NOTE: this is what goes in the hashtables :3
 typedef struct PyObject {
-  PyType type;
+  struct PyTypeObject *type;
 } PyObject;
 
+typedef struct PyTypeObject {
+  PyObject base;
+  struct PyMethodDef *method_defs;
+  struct HashTable *methods; // constructed at startup from method_defs
+} PyTypeObject;
+
 typedef struct PyIntObject {
-  PyType type;
+  PyObject base;
   int value;
 } PyIntObject;
 
 typedef struct PyBoolObject {
-  PyType type;
+  PyObject base;
   int value; // 1 for True
 } PyBoolObject;
 
 typedef struct PyTupleObject {
-  PyType type;
+  PyObject base;
   int size;
   PyObject **elements; // TODO: allocate inline with the [] trick
 } PyTupleObject;
 
 typedef struct PyBytesObject {
-  PyType type;
+  PyObject base;
   int size;
   char *data; // TODO: inline
 } PyBytesObject;
 
 typedef struct PyCodeObject {
-  PyType type;
+  PyObject base;
   char **bytecode; // array of bytecode instructions
   PyObject **consts;  // e.g. literals, compiled function/code objects
   char **argnames; // TODO: allocate inline
 } PyCodeObject;
 
 typedef struct PyFuncObject {
-  PyType type;
+  PyObject base;
   PyCodeObject *code;
 } PyFuncObject;
 
-typedef PyObject *(*PyCFunction)(PyTupleObject *args);
+// args should be a tuple
+typedef PyObject *(*PyCFunction)(PyObject *self, PyObject *args);
+
+typedef struct PyMethodDef {
+  char *name;
+  PyCFunction method; 
+} PyMethodDef;
 
 typedef struct PyCFuncObject {
-  PyType type;
+  PyObject base;
   PyCFunction function; // pointer to a C function
 } PyCFuncObject;
 
@@ -63,7 +69,7 @@ typedef struct Entry {
   struct Entry *next;
 } Entry;
 
-typedef struct {
+typedef struct HashTable {
   Entry *data[8]; // fixed size - TODO: resize depending on load factor
   int size;
   int itemCount;

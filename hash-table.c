@@ -71,7 +71,7 @@ void hashtable_print(HashTable *htable) {
     // iterate over bucket printing nodes we find
     current = htable->data[idx]->next;
     while (current != NULL) {
-      printf("'%s':type='%d',", current->key, current->object->type);
+      printf("'%s':address='%p',", current->key, current->object);
       current = current->next;
     }
   }
@@ -87,15 +87,15 @@ int main() {
   
   // malloc some ints and insert them
   PyIntObject *p = malloc(sizeof(PyIntObject));
-  p->type = PY_INT;
+  p->type = ...;
   p->value = 12;
 
   PyIntObject *q = malloc(sizeof(PyIntObject));
-  q->type = PY_INT;
+  q->type = ...;
   q->value = 14;
 
   PyFuncObject *f = malloc(sizeof(PyFuncObject));
-  f->type = PY_FUNC;
+  f->type = ...;
   f->bytecode_offset = 10;
 
   hashtable_insert(&htable, "cake", (PyObject *) p);
@@ -108,10 +108,10 @@ int main() {
   PyObject *obj = hashtable_get(&htable, "aaaa");
   if (obj != NULL) {
     switch (obj->type) {
-      case PY_INT:
+      case ...:
         printf("got int: %d\n", ((PyIntObject *) obj)->value);
         break;
-      case PY_FUNC:
+      case ...:
         printf("got func with offset: %d\n", ((PyFuncObject *) obj)->bytecode_offset); 
         break;
     }
