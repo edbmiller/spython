@@ -34,7 +34,7 @@ void string_appendf(String *s, const char *fmt, ...) {
   va_copy(args_copy, args);
   int needed = vsnprintf(NULL, 0, fmt, args);
   va_end(args);
-  while (s->length + needed > s->size) {
+  while (s->length + needed + 1 > s->size) {
     size_t new_size = 2 * s->size;
     s->data = realloc(s->data, new_size);
     s->size = new_size;

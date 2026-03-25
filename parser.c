@@ -875,7 +875,6 @@ char *space(int n) {
 String node_format(Node *n, int indent) {
   String result;
   string_init(&result);
-  printf("DEBUG: formatting %s\n", node_type_table[n->type]);
   if (n->type == CONSTANT) {
     if (n->data.constant->value->type == PY_INT) {
       string_appendf(&result, "Constant(value=%d)", ((PyIntObject *) n->data.constant->value)->value);
@@ -1023,7 +1022,6 @@ String node_format(Node *n, int indent) {
       }
     }
   }
-  printf("DEBUG: done\n");
   return result;
 }
 
@@ -1176,6 +1174,7 @@ void print_tokens(Token *tokens) {
   printf("\n");
 }
 
+/*
 int main() {
   TokenArray tokens = tokenize("print(\"\")");
   print_tokens(tokens.data);
@@ -1192,3 +1191,4 @@ int main() {
   }
   exit(0);
 }
+*/
