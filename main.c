@@ -10,6 +10,7 @@
 #include "cfunc.h"
 #include "func.h"
 #include "int.h"
+#include "tuple.h"
 
 #define MAX_STACK_SIZE 100 
 #define MAX_RECURSION_DEPTH 1000
@@ -339,19 +340,17 @@ void handle_bytecode(PyState *state, const char *input) {
         state->current_frame = new_frame;
         state->recursion_depth += 1;
       } else if (f->type == &py_type_cfunc) {
-        ; /* TODO: reimplement
         PyCFuncObject *cfunc = (PyCFuncObject *) f;
         PyTupleObject *py_args = malloc(sizeof(PyTupleObject));
-        py_args->base.type = ...;
+        py_args->base.type = &py_type_tuple;
         py_args->size = arg_count;
         py_args->elements = malloc(arg_count * sizeof(PyObject *));
         for (int j=0; j < arg_count; j++) {
           py_args->elements[j] = args[j];
         }
-        PyObject *result = cfunc->function(py_args);
+        PyObject *result = cfunc->function(NULL, (PyObject *) py_args);
         stack_push(state->current_frame->value_stack, result);
         state->current_frame->bytecode_offset += 1; 
-        */
       }
       break;
     case OP_RETURN: {
@@ -425,8 +424,19 @@ char *read_file(const char *filename) {
 }
 
 // BUILT-INS
-// TODO: re-implement
 PyObject *py_builtin_print(PyObject *self, PyObject *args) {
+  // NOTE: expect self == NULL
+  PyTupleObject *_args = (PyTupleObject *) args;
+  for (int i = 0; i < _args->size; i++) {
+    if (_args->elements[i]->type == &py_type_int) {
+      printf("%d", ((PyIntObject *) _args->elements[i])->value);
+    } 
+    if (i+1 < _args->size) {
+      printf(" ");
+    } else {
+      printf("\n");
+    }
+  }
   return NULL;
 }
 
