@@ -7,6 +7,7 @@
 #include "parser.h"
 #include "string.h"
 #include "int.h"
+#include "bytes.h"
 #include "code.h"
 
 const int MAX_ARGS = 5;
@@ -376,6 +377,17 @@ ParseResult handle_multiply_divide(
         c->value = (PyObject *) v;
         left->type = CONSTANT;
         left->data.constant = c;
+      } else if (tokens[t_idx].type == T_STRING) {
+        // -- allocate PyBytesObject --
+        PyBytesObject *v = malloc(sizeof(PyBytesObject));
+        v->base.type = &py_type_bytes;
+        v->size = strlen(tokens[t_idx].lexeme);
+        v->data = strdup(tokens[t_idx].lexeme);
+        // ----------------------------
+        Constant *c = malloc(sizeof(Constant));
+        c->value = (PyObject *) v;
+        left->type = CONSTANT;
+        left->data.constant = c;
       } else {
         Name *n = malloc(sizeof(Name));
         n->id = tokens[t_idx].lexeme;
@@ -410,6 +422,17 @@ ParseResult handle_multiply_divide(
           c->value = (PyObject *) v;
           right->type = CONSTANT;
           right->data.constant = c;
+        } else if (tokens[t_idx].type == T_STRING) {
+          // -- allocate PyBytesObject --
+          PyBytesObject *v = malloc(sizeof(PyBytesObject));
+          v->base.type = &py_type_bytes;
+          v->size = strlen(tokens[t_idx].lexeme);
+          v->data = strdup(tokens[t_idx].lexeme);
+          // ----------------------------
+          Constant *c = malloc(sizeof(Constant));
+          c->value = (PyObject *) v;
+          left->type = CONSTANT;
+          left->data.constant = c;
         } else {
           Name *n = malloc(sizeof(Name));
           n->id = tokens[t_idx].lexeme;
@@ -499,6 +522,17 @@ ParseResult handle_add_subtract(
         c->value = (PyObject *) v;
         left->type = CONSTANT;
         left->data.constant = c;
+      } else if (tokens[t_idx].type == T_STRING) {
+        // -- allocate PyBytesObject --
+        PyBytesObject *v = malloc(sizeof(PyBytesObject));
+        v->base.type = &py_type_bytes;
+        v->size = strlen(tokens[t_idx].lexeme);
+        v->data = strdup(tokens[t_idx].lexeme);
+        // ----------------------------
+        Constant *c = malloc(sizeof(Constant));
+        c->value = (PyObject *) v;
+        left->type = CONSTANT;
+        left->data.constant = c;
       } else {
         Name *n = malloc(sizeof(Name));
         n->id = tokens[t_idx].lexeme;
@@ -529,6 +563,17 @@ ParseResult handle_add_subtract(
           v->base.type = &py_type_int;
           v->value = atoi(tokens[t_idx].lexeme);
           // --------------------------
+          Constant *c = malloc(sizeof(Constant));
+          c->value = (PyObject *) v;
+          left->type = CONSTANT;
+          left->data.constant = c;
+        } else if (tokens[t_idx].type == T_STRING) {
+          // -- allocate PyBytesObject --
+          PyBytesObject *v = malloc(sizeof(PyBytesObject));
+          v->base.type = &py_type_bytes;
+          v->size = strlen(tokens[t_idx].lexeme);
+          v->data = strdup(tokens[t_idx].lexeme);
+          // ----------------------------
           Constant *c = malloc(sizeof(Constant));
           c->value = (PyObject *) v;
           left->type = CONSTANT;
@@ -618,6 +663,17 @@ ParseResult handle_comparator(
         c->value = (PyObject *) v;
         left->type = CONSTANT;
         left->data.constant = c;
+      } else if (tokens[t_idx].type == T_STRING) {
+        // -- allocate PyBytesObject --
+        PyBytesObject *v = malloc(sizeof(PyBytesObject));
+        v->base.type = &py_type_bytes;
+        v->size = strlen(tokens[t_idx].lexeme);
+        v->data = strdup(tokens[t_idx].lexeme);
+        // ----------------------------
+        Constant *c = malloc(sizeof(Constant));
+        c->value = (PyObject *) v;
+        left->type = CONSTANT;
+        left->data.constant = c;
       } else {
         Name *n = malloc(sizeof(Name));
         n->id = tokens[t_idx].lexeme;
@@ -671,6 +727,17 @@ ParseResult handle_comparator(
           v->base.type = &py_type_int;
           v->value = atoi(tokens[t_idx].lexeme);
           // --------------------------
+          Constant *c = malloc(sizeof(Constant));
+          c->value = (PyObject *) v;
+          left->type = CONSTANT;
+          left->data.constant = c;
+        } else if (tokens[t_idx].type == T_STRING) {
+          // -- allocate PyBytesObject --
+          PyBytesObject *v = malloc(sizeof(PyBytesObject));
+          v->base.type = &py_type_bytes;
+          v->size = strlen(tokens[t_idx].lexeme);
+          v->data = strdup(tokens[t_idx].lexeme);
+          // ----------------------------
           Constant *c = malloc(sizeof(Constant));
           c->value = (PyObject *) v;
           left->type = CONSTANT;
@@ -836,7 +903,14 @@ String node_format(Node *n, int indent) {
   String result;
   string_init(&result);
   if (n->type == CONSTANT) {
-    string_appendf(&result, "Constant(value=%d)", ((PyIntObject *) n->data.constant->value)->value);
+    if (n->data.constant->value->type == &py_type_int) {
+      string_appendf(&result, "Constant(value=%d)", ((PyIntObject *) n->data.constant->value)->value);
+    } else if (n->data.constant->value->type == &py_type_bytes) {
+      string_appendf(&result, "Constant(value='%s')", ((PyBytesObject *) n->data.constant->value)->data);
+    } else {
+      printf("RuntimeError: can't format this type\n");
+      exit(1);
+    }
   } else if (n->type == NAME) {
     string_appendf(&result, "Name(id='%s')", n->data.name->id);
   } else if (n->type == BINARYOP) {
@@ -1132,7 +1206,7 @@ void print_tokens(Token *tokens) {
 
 /*
 int main() {
-  TokenArray tokens = tokenize("print(3 + 3)");
+  TokenArray tokens = tokenize("print(\"foo\" + \"bar\")");
   print_tokens(tokens.data);
 
   int t_idx = 0;

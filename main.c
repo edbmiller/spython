@@ -11,6 +11,7 @@
 #include "func.h"
 #include "int.h"
 #include "tuple.h"
+#include "bytes.h"
 
 #define MAX_STACK_SIZE 100 
 #define MAX_RECURSION_DEPTH 1000
@@ -430,7 +431,9 @@ PyObject *py_builtin_print(PyObject *self, PyObject *args) {
   for (int i = 0; i < _args->size; i++) {
     if (_args->elements[i]->type == &py_type_int) {
       printf("%d", ((PyIntObject *) _args->elements[i])->value);
-    } 
+    } else if (_args->elements[i]->type == &py_type_bytes) {
+      printf("%s", ((PyBytesObject *) _args->elements[i])->data); 
+    }
     if (i+1 < _args->size) {
       printf(" ");
     } else {
@@ -442,8 +445,9 @@ PyObject *py_builtin_print(PyObject *self, PyObject *args) {
 
 int main(int argc, char **argv) {
 
-  // initialise types
+  // initialise types (i.e. build their method tabels.
   py_type_init(&py_type_int);
+  py_type_init(&py_type_bytes);
 
   // initialise globals hash-table
   HashTable globals;
