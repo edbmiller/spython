@@ -461,6 +461,22 @@ PyObject *py_builtin_print(PyObject *self, PyObject *args) {
   return NULL;
 }
 
+PyObject *py_builtin_len(PyObject *self, PyObject *args) {
+  // NOTE: expect self == NULL
+  // we just return `type(args[0]).__len__(arg)`
+  PyTupleObject *_args = (PyTupleObject *) args;
+  PyObject *arg = _args->elements[0];
+  PyTypeObject *type_arg = arg->type; 
+  PyObject *_len_obj = hashtable_get(type_arg->methods, "__len__");
+  if (_len_obj == NULL) {
+    printf("AttributeError: __len__");
+    exit(1);
+  }
+  assert(_len_obj->type == &py_type_cfunc); 
+  PyCFunction _len = ((PyCFuncObject *) _len_obj)->function;
+  return _len(self, arg);
+}
+
 int main(int argc, char **argv) {
 
   // initialise types (i.e. build their method tabels.
@@ -472,13 +488,17 @@ int main(int argc, char **argv) {
   hashtable_init(&globals);
   
   // load builtins
-  // print ----
-  PyCFunction py_builtin_print_function = py_builtin_print;
-  // TODO: allocate on stack ?
-  PyCFuncObject *py_builtin_print_object = malloc(sizeof(PyCFuncObject));
-  py_builtin_print_object->base.type = &py_type_cfunc;
-  py_builtin_print_object->function = py_builtin_print_function;
-  hashtable_insert(&globals, "print", (PyObject *) py_builtin_print_object);
+  PyMethodDef py_builtins[] = {
+    { "print", py_builtin_print },
+    { "len", py_builtin_len },
+    { NULL, NULL }
+  };
+  for (int i=0; py_builtins[i].name != NULL; i++) {
+    PyCFuncObject *_builtin_obj = malloc(sizeof(PyCFuncObject));
+    _builtin_obj->base.type = &py_type_cfunc;
+    _builtin_obj->function = py_builtins[i].method; 
+    hashtable_insert(&globals, py_builtins[i].name, (PyObject *) _builtin_obj);
+  }
 
   // initialise state with current frame
   PyFrameObject bottom_frame;

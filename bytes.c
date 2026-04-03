@@ -39,9 +39,17 @@ PyObject *py_bytes_multiply(PyObject *a, PyObject *b) {
   return (PyObject *) result;
 }
 
+PyObject *py_bytes_length(PyObject *a, PyObject *b) {
+  PyIntObject *result = malloc(sizeof(PyIntObject));
+  result->base.type = &py_type_int;
+  result->value = ((PyBytesObject *) b)->size;
+  return (PyObject *) result;
+}
+
 PyMethodDef bytes_method_defs[] = {
   { "__add__", py_bytes_add },
   { "__mult__", py_bytes_multiply },
+  { "__len__", py_bytes_length },
   { NULL, NULL }
 };
 
