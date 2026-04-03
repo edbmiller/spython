@@ -274,7 +274,8 @@ void handle_bytecode(PyState *state, const char *input) {
       break;
     case OP_BINARY_OP: {
       // get binary operator
-      int bin_op = get_operand(input); 
+      int bin_op = get_operand(input);
+      // TODO: just map bin_op to method string
       if (bin_op == ADD) {
         PyObject *b = stack_pop(state->current_frame->value_stack);
         PyObject *a = stack_pop(state->current_frame->value_stack);
@@ -289,6 +290,23 @@ void handle_bytecode(PyState *state, const char *input) {
         assert(_add_obj->type == &(py_type_cfunc)); 
         PyCFunction _add = ((PyCFuncObject *) _add_obj)->function;
         PyObject *result = _add(a, b);
+        stack_push(state->current_frame->value_stack, result);
+        state->current_frame->bytecode_offset += 1;
+        break;
+      } else if (bin_op == MULT) {
+        PyObject *b = stack_pop(state->current_frame->value_stack);
+        PyObject *a = stack_pop(state->current_frame->value_stack);
+        // lookup __mult__ on `type(a)`
+        PyTypeObject *type_a = a->type; 
+        // assume all dunder methods are builtins
+        PyObject *_mult_obj = hashtable_get(type_a->methods, "__mult__");
+        if (_mult_obj == NULL) {
+          printf("AttributeError: __mult__");
+          exit(1);
+        }
+        assert(_mult_obj->type == &(py_type_cfunc)); 
+        PyCFunction _mult = ((PyCFuncObject *) _mult_obj)->function;
+        PyObject *result = _mult(a, b);
         stack_push(state->current_frame->value_stack, result);
         state->current_frame->bytecode_offset += 1;
         break;

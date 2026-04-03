@@ -35,7 +35,7 @@ typedef struct PyTupleObject {
 typedef struct PyBytesObject {
   PyObject base;
   int size;
-  char *data; // TODO: inline
+  char *data; // TODO: make dynamic string, not char buffer...
 } PyBytesObject;
 
 typedef struct PyCodeObject {

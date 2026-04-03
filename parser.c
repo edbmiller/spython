@@ -1206,7 +1206,7 @@ void print_tokens(Token *tokens) {
 
 /*
 int main() {
-  TokenArray tokens = tokenize("print(\"foo\" + \"bar\")");
+  TokenArray tokens = tokenize("print(\"foo\" * 3)");
   print_tokens(tokens.data);
 
   int t_idx = 0;

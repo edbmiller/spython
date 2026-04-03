@@ -1,8 +1,10 @@
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "bytes.h"
 #include "type.h"
+#include "int.h"
 
 PyObject *py_bytes_add(PyObject *a, PyObject *b) {
   PyBytesObject *result = malloc(sizeof(PyBytesObject));
@@ -16,8 +18,30 @@ PyObject *py_bytes_add(PyObject *a, PyObject *b) {
   return (PyObject *) result;
 }
 
+PyObject *py_bytes_multiply(PyObject *a, PyObject *b) {
+  assert(b->type == &py_type_int);
+  int a_size = ((PyBytesObject *) a)->size;
+  int b_value = ((PyIntObject *) b)->value;
+  PyBytesObject *result = malloc(sizeof(PyBytesObject));
+  result->base.type = &py_type_bytes;
+  result->size = ((PyBytesObject *) a)->size * b_value;
+  result->data = malloc(result->size + 1); 
+  // do memcpy (n - 1) times
+  for (int i=0; i<b_value-1; i++) {
+    memcpy(result->data + i*a_size, ((PyBytesObject *) a)->data, a_size); 
+  }
+  // and a strcpy to null-terminate
+  if (b_value != 0) {
+    strcpy(result->data + (b_value-1)*a_size, ((PyBytesObject *) a)->data);
+  } else {
+    result->data[0] = '\0'; 
+  }
+  return (PyObject *) result;
+}
+
 PyMethodDef bytes_method_defs[] = {
   { "__add__", py_bytes_add },
+  { "__mult__", py_bytes_multiply },
   { NULL, NULL }
 };
 
