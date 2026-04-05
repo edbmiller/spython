@@ -46,8 +46,10 @@ TokenArray tokenize(const char *source) {
     Token token; // to be added
     if (isdigit(c)) {
       // start accumulating
-      while (isdigit(c)) {
-        buf[b_idx++] = c;
+      while (isdigit(c) || c == '_') {
+        if (c != '_') {
+          buf[b_idx++] = c;
+        }
         c = source[++i]; 
       }
       buf[b_idx++] = '\0';
