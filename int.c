@@ -18,6 +18,7 @@ PyMethodDef int_method_defs[] = {
 
 PyTypeObject py_type_int = {
   .base = { .type = &py_type_type },
+  .name = "int",
   .method_defs = int_method_defs,
   .methods = NULL
 };

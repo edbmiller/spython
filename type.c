@@ -6,6 +6,7 @@
 
 PyTypeObject py_type_type = {
   .base = { .type = &py_type_type },
+  .name = "type",
   .method_defs = NULL,
   .methods = NULL,
 };

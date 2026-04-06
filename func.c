@@ -5,6 +5,7 @@
 
 PyTypeObject py_type_func = {
   .base = { .type = &py_type_type },
+  .name = "function",
   .method_defs = NULL,
   .methods = NULL,
 };

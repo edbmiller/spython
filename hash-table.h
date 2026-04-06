@@ -12,6 +12,7 @@ typedef struct PyObject {
 
 typedef struct PyTypeObject {
   PyObject base;
+  char *name;
   struct PyMethodDef *method_defs;
   struct HashTable *methods; // constructed at startup from method_defs
 } PyTypeObject;
@@ -35,7 +36,7 @@ typedef struct PyTupleObject {
 typedef struct PyBytesObject {
   PyObject base;
   int size;
-  char *data; // TODO: make dynamic string, not char buffer...
+  char *data;
 } PyBytesObject;
 
 typedef struct PyCodeObject {

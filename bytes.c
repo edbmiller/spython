@@ -61,6 +61,7 @@ PyMethodDef bytes_method_defs[] = {
 
 PyTypeObject py_type_bytes = {
   .base = { .type = &py_type_type },
+  .name = "str",
   .method_defs = bytes_method_defs,
   .methods = NULL
 };
