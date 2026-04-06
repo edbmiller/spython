@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdio.h>
 
 #include "bytes.h"
 #include "type.h"
@@ -25,7 +26,12 @@ PyObject *py_bytes_multiply(PyObject *a, PyObject *b) {
   PyBytesObject *result = malloc(sizeof(PyBytesObject));
   result->base.type = &py_type_bytes;
   result->size = ((PyBytesObject *) a)->size * b_value;
-  result->data = malloc(result->size + 1); 
+  char *data = malloc(result->size + 1);
+  if (data == NULL) {
+    printf("MemoryError\n");
+    exit(1);
+  }
+  result->data = data;
   // do memcpy (n - 1) times
   for (int i=0; i<b_value-1; i++) {
     memcpy(result->data + i*a_size, ((PyBytesObject *) a)->data, a_size); 
